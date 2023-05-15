@@ -1,4 +1,5 @@
 pub mod spider;
+pub mod pipeline;
 
 use log::info;
 use simple_logger::SimpleLogger;
