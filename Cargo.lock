@@ -1491,6 +1491,8 @@ dependencies = [
 name = "spanish_pipeline"
 version = "0.1.0"
 dependencies = [
+ "ego-tree",
+ "html5ever",
  "json5",
  "log",
  "once_cell",

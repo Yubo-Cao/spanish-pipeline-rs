@@ -5,6 +5,8 @@ edition = "2021"
 
 
 [dependencies]
+ego-tree = "0.6.2"
+html5ever = "0.26.0"
 json5 = "0.4.1"
 log = "0.4.17"
 once_cell = "1.17.1"
