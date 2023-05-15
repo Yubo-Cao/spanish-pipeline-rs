@@ -1,8 +1,8 @@
-pub mod google_image;
+pub mod spider;
 
-use google_image::image_search;
 use log::info;
 use simple_logger::SimpleLogger;
+use spider::google_image::image_search;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

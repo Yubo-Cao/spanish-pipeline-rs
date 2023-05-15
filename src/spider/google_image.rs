@@ -1,18 +1,20 @@
 use core::fmt;
-use log::{debug, info};
+
+use log::debug;
 use once_cell::sync::Lazy;
 use scraper::{Html, Selector};
 use url::form_urlencoded;
 
+use super::CLIENT;
+
 pub struct Image {
     pub src: String,
-    pub width: u32,
-    pub height: u32,
+    pub alt: String,
 }
 
 impl fmt::Display for Image {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {}x{}", self.src, self.width, self.height)
+        write!(f, "{} ({})", self.src, self.alt)
     }
 }
 
@@ -25,29 +27,17 @@ pub struct GoogleImage {
 
 impl fmt::Display for GoogleImage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {} @ {}", self.full, self.title, self.url)
+        write!(f, "{} @ {} ({})", self.title, self.url, self.full)
     }
 }
 
+/**
+`parse_google_image` accept a json format that is returned by
+parsing json5 from a script element on google image search results page.
+It parses the json and returns a `GoogleImage` struct.
+ */
 fn parse_google_image(x: &serde_json::Value) -> Option<GoogleImage> {
     let l: &serde_json::Value = &x[0][0][x[0][0].as_object()?.keys().next()?];
-    let thumb_url: &str = l[1][2][0].as_str()?;
-    let thumb_height = l[1][2][1].as_u64()? as u32;
-    let thumb_width = l[1][2][2].as_u64()? as u32;
-    let thumb = Image {
-        src: thumb_url.to_string(),
-        width: thumb_width,
-        height: thumb_height,
-    };
-
-    let real_url: &str = l[1][3][0].as_str()?;
-    let real_height = l[1][3][1].as_u64()? as u32;
-    let real_width = l[1][3][2].as_u64()? as u32;
-    let full = Image {
-        src: real_url.to_string(),
-        width: real_width,
-        height: real_height,
-    };
 
     let src: &Vec<serde_json::Value> = l[1]
         .as_array()?
@@ -77,6 +67,20 @@ fn parse_google_image(x: &serde_json::Value) -> Option<GoogleImage> {
     let url = src[2].as_str()?.to_string();
     let title = src[3].as_str()?.to_string();
 
+    let thumb = Image {
+        src: l[1][2][0].as_str()?.to_string(),
+        alt: title.clone(),
+        // width: l[1][2][1].as_u64()? as u32,
+        // height: l[1][2][2].as_u64()? as u32,
+    };
+
+    let full = Image {
+        src: l[1][3][0].as_str()?.to_string(),
+        alt: title.clone(),
+        // width: l[1][3][1].as_u64()? as u32,
+        // height: l[1][3][2].as_u64()? as u32,
+    };
+
     Some(GoogleImage {
         thumb,
         full,
@@ -101,8 +105,9 @@ pub async fn image_search(
     let url = format!("https://www.google.com/search?{}", params);
     debug!(target: "image_search", "url: {}", url);
     let dom = Html::parse_document(&CLIENT.get(&url).send().await?.text().await?);
+    let script_selector = Lazy::new(|| Selector::parse("script").unwrap());
     let json = dom
-        .select(&Selector::parse("script")?)
+        .select(&script_selector)
         .find_map(|x| {
             let text = x.text().collect::<String>();
             if text.contains("AF_initDataCallback")
@@ -153,15 +158,14 @@ pub async fn image_search_max(
     Ok(images)
 }
 
-const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.42";
-static CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
-    info!(target: "google_image", "creating client");
-    reqwest::ClientBuilder::new()
-        .user_agent(USER_AGENT)
-        .cookie_store(true)
-        .deflate(true)
-        .brotli(true)
-        .gzip(true)
-        .build()
-        .expect("should be able to create client")
-});
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_search() {
+        let result = image_search("cat", 0).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().len() > 0);
+    }
+}
