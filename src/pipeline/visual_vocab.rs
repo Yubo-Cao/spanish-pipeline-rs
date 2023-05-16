@@ -28,6 +28,7 @@ struct VisualFlashCard {
 
 impl VisualFlashCard {
     /// Return a table with the visual flashcard
+    /// ```md
     /// |-------------------------|
     /// | Vocabulario: word       |
     /// |-------------------------|
@@ -35,6 +36,7 @@ impl VisualFlashCard {
     /// |-------------------------|
     /// | Foto / Media: image     |
     /// |-------------------------|
+    /// ```
     pub fn to_table(&self) -> Table {
         Table::new(vec![
             TableRow::new(vec![TableCell::new()
@@ -52,6 +54,7 @@ impl VisualFlashCard {
     }
 
     /// Return a table with the visual flashcards
+    /// ```md
     /// |-------------------------|-------------------------|-------------------------|
     /// | Vocabulario: word       | Vocabulario: word       | Vocabulario: word       |
     /// |-------------------------|-------------------------|-------------------------|
@@ -59,6 +62,7 @@ impl VisualFlashCard {
     /// |-------------------------|-------------------------|-------------------------|
     /// | Foto / Media: image     | Foto / Media: image     | Foto / Media: image     |
     /// |-------------------------|-------------------------|-------------------------|
+    /// ```
     pub fn to_tables(vocabs: &[VisualFlashCard]) -> Table {
         Table::new(vec![
             TableRow::new(
