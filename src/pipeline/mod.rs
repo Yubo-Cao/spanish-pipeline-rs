@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+pub mod visual_vocab;
 
 /// Represents the flashcard output of a pipeline stage.
 #[derive(Debug)]
