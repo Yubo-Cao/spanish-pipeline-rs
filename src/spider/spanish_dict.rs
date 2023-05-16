@@ -135,7 +135,7 @@ pub async fn search_vocab(word: &str) -> Result<DictionaryEntry, &'static str> {
                     );
 
                     let example = intermediate[intermediate.len() - 1];
-                    if let None = example.children().next() {
+                    if example.children().next().is_none() {
                         continue;
                     }
 
@@ -206,8 +206,8 @@ fn textify(element: &ElementRef) -> String {
         .collect::<Vec<_>>()
         .join("")
         .trim()
-        .trim_end_matches(")")
-        .trim_start_matches("(")
+        .trim_end_matches(')')
+        .trim_start_matches('(')
         .to_string()
 }
 
@@ -226,7 +226,7 @@ mod test {
     async fn search_light() {
         let result = search_vocab("luz").await.unwrap();
         assert_eq!(result.word, "luz");
-        assert!(result.definitions.len() > 0);
+        assert!(!result.definitions.is_empty());
         dbg!(result);
     }
 }

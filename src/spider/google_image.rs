@@ -31,6 +31,25 @@ impl fmt::Display for GoogleImage {
     }
 }
 
+impl Image {
+    /// Get the bytes of an image
+    pub async fn get_bytes(image: &GoogleImage) -> Result<Vec<u8>, &'static str> {
+        if let Ok(resp) = CLIENT.get(&image.url).send().await {
+            if let Ok(bytes) = resp.bytes().await {
+                return Ok(bytes.to_vec());
+            }
+        }
+        Err("should have received bytes")
+    }
+}
+
+impl GoogleImage {
+    /// Get the bytes of an image
+    pub async fn get_bytes(&self) -> Result<Vec<u8>, &'static str> {
+        Image::get_bytes(self).await
+    }
+}
+
 /**
 `parse_google_image` accept a json format that is returned by
 parsing json5 from a script element on google image search results page.
@@ -92,10 +111,7 @@ fn parse_google_image(x: &serde_json::Value) -> Option<GoogleImage> {
 /**
 `image_search` searches for images on google and returns up to 100 images.
  */
-pub async fn image_search(
-    query: &str,
-    offset: u32,
-) -> Result<Vec<GoogleImage>, Box<dyn std::error::Error>> {
+pub async fn image_search(query: &str, offset: u32) -> Result<Vec<GoogleImage>, &'static str> {
     let params = form_urlencoded::Serializer::new(String::new())
         .append_pair("tbm", "isch")
         .append_pair("q", query)
@@ -104,7 +120,7 @@ pub async fn image_search(
         .finish();
     let url = format!("https://www.google.com/search?{}", params);
     debug!(target: "image_search", "url: {}", url);
-    let dom = Html::parse_document(&CLIENT.get(&url).send().await?.text().await?);
+    let dom = Html::parse_document(&CLIENT.get(&url).send().await.unwrap().text().await.unwrap());
     let script_selector = Lazy::new(|| Selector::parse("script").unwrap());
     let json = dom
         .select(&script_selector)
@@ -138,10 +154,7 @@ pub async fn image_search(
 /**
 `image_search_max` searches for images on google and returns up to `max` images.
  */
-pub async fn image_search_max(
-    query: &str,
-    max: u32,
-) -> Result<Vec<GoogleImage>, Box<dyn std::error::Error>> {
+pub async fn image_search_max(query: &str, max: u32) -> Result<Vec<GoogleImage>, &'static str> {
     let mut images = Vec::new();
     let mut offset = 0;
     while offset < max {
@@ -166,6 +179,6 @@ mod test {
     async fn test_search() {
         let result = image_search("cat", 0).await;
         assert!(result.is_ok());
-        assert!(result.unwrap().len() > 0);
+        assert!(!result.unwrap().is_empty());
     }
 }

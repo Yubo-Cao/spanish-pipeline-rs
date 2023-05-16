@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+
+use async_trait::async_trait;
 pub mod visual_vocab;
 
 /// Represents the flashcard output of a pipeline stage.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Flashcard {
     pub word: String,
     pub definition: String,
@@ -24,6 +26,7 @@ pub enum PipelineInput {
 }
 
 /// Represents a pipeline stage.
+#[async_trait]
 trait PipelineStage {
-    fn process(&self, input: PipelineInput) -> Result<Vec<PipelineOutput>, &'static str>;
+    async fn process(&self, input: PipelineInput) -> Result<Vec<PipelineOutput>, &'static str>;
 }
