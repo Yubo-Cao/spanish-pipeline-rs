@@ -6,6 +6,7 @@ edition = "2021"
 
 [dependencies]
 async-trait = "0.1.68"
+clap = "4.2.7"
 docx-rs = "0.4.6"
 ego-tree = "0.6.2"
 futures = "0.3.28"
