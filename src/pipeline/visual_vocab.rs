@@ -9,7 +9,7 @@ use rust_bert::pipelines::sentence_embeddings::{
     builder::SentenceEmbeddingsBuilder, SentenceEmbeddingsModelType,
 };
 
-use super::{Flashcard, PipelineOutput, PipelineStage};
+use super::{Flashcard, Pipeline, PipelineIO};
 use crate::spider::{
     google_image::image_search_max,
     spanish_dict::{search_vocab, DictionaryDefinition, DictionaryExample},
@@ -111,8 +111,8 @@ impl VisualFlashCard {
 const IMAGE_RANDOM_POOL_SIZE: u32 = 10;
 
 #[async_trait]
-impl PipelineStage for VisualVocabPipeline {
-    async fn run(&self, vocab: Vec<Flashcard>) -> Result<Vec<PipelineOutput>, &'static str> {
+impl Pipeline for VisualVocabPipeline {
+    async fn run(&self, input: Option<PipelineIO>) -> Result<PipelineIO, &'static str> {
         let VisualVocabPipeline {
             row,
             col,
@@ -121,8 +121,13 @@ impl PipelineStage for VisualVocabPipeline {
             filename,
         } = self;
 
+        let flashcard = match input {
+            Some(PipelineIO::Flashcard(vocab)) => vocab,
+            _ => return Err("VisualVocabPipeline requires a vocab input"),
+        };
+
         // pick random words
-        let mut words = vocab.clone();
+        let mut words = flashcard.clone();
         let mut result: Vec<Flashcard> = vec![];
         for _ in 0..row * col {
             let word = words.remove(random::<usize>() % words.len());
@@ -164,10 +169,10 @@ impl PipelineStage for VisualVocabPipeline {
         docx.build()
             .pack(&mut buffer)
             .expect("should have built document");
-        Ok(vec![PipelineOutput::Document {
+        Ok(PipelineIO::Document {
             name: filename.to_string(),
             content: buffer.into_inner(),
-        }])
+        })
     }
 
     fn get_command() -> clap::Command {
