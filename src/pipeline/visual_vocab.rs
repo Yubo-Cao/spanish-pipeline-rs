@@ -2,6 +2,7 @@ use std::io::Cursor;
 
 use async_trait::async_trait;
 use docx_rs::*;
+use log::info;
 use once_cell::sync::Lazy;
 use rand::random;
 use rust_bert::pipelines::sentence_embeddings::{
@@ -13,7 +14,6 @@ use crate::spider::{
     google_image::image_search_max,
     spanish_dict::{search_vocab, DictionaryDefinition, DictionaryExample},
 };
-use log::info;
 
 struct VisualVocabPipeline {
     vocab: Vec<Flashcard>,
@@ -39,11 +39,11 @@ impl VisualFlashCard {
         Table::new(vec![
             TableRow::new(vec![TableCell::new()
                 .add_paragraph(Paragraph::new().add_run(
-                    Run::new().add_text(&format!("Vocabulario: {}", self.word)),
+                    Run::new().add_text(format!("Vocabulario: {}", self.word)),
                 ))]),
             TableRow::new(vec![TableCell::new()
                 .add_paragraph(Paragraph::new().add_run(
-                    Run::new().add_text(&format!("Frase Completa: {}", self.example)),
+                    Run::new().add_text(format!("Frase Completa: {}", self.example)),
                 ))]),
             TableRow::new(vec![TableCell::new().add_paragraph(
                 Paragraph::new().add_run(Run::new().add_image(Pic::new(&self.image))),
@@ -67,7 +67,7 @@ impl VisualFlashCard {
                     .map(|x| {
                         TableCell::new().add_paragraph(
                             Paragraph::new()
-                                .add_run(Run::new().add_text(&format!("Vocabulario: {}", x.word))),
+                                .add_run(Run::new().add_text(format!("Vocabulario: {}", x.word))),
                         )
                     })
                     .collect(),
@@ -77,7 +77,7 @@ impl VisualFlashCard {
                     .iter()
                     .map(|x| {
                         TableCell::new().add_paragraph(Paragraph::new().add_run(
-                            Run::new().add_text(&format!("Frase Completa: {}", x.example)),
+                            Run::new().add_text(format!("Frase Completa: {}", x.example)),
                         ))
                     })
                     .collect(),
