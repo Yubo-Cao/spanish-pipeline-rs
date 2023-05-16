@@ -1,3 +1,5 @@
+//! This project aims to create a simple web crawler to faciliate the completion of Spanish homework.
+
 pub mod pipeline;
 pub mod spider;
 

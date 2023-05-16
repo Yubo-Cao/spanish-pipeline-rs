@@ -1,17 +1,21 @@
+use std::io::Cursor;
+
 use async_trait::async_trait;
+use docx_rs::*;
 use once_cell::sync::Lazy;
 use rand::random;
 use rust_bert::pipelines::sentence_embeddings::{
     builder::SentenceEmbeddingsBuilder, SentenceEmbeddingsModelType,
 };
 
-use super::{Flashcard, PipelineInput, PipelineOutput, PipelineStage};
+use super::{get_or_default, Flashcard, PipelineInput, PipelineOutput, PipelineStage};
 use crate::spider::{
     google_image::image_search_max,
     spanish_dict::{search_vocab, DictionaryDefinition, DictionaryExample},
 };
+use log::info;
 
-struct VisualVocab {
+struct VisualVocabPipeline {
     vocab: Vec<Flashcard>,
 }
 
@@ -22,22 +26,140 @@ struct VisualFlashCard {
     example: String,
 }
 
+impl VisualFlashCard {
+    /// Return a table with the visual flashcard
+    /// |-------------------------|
+    /// | Vocabulario: word       |
+    /// |-------------------------|
+    /// | Frase Completa: example |
+    /// |-------------------------|
+    /// | Foto / Media: image     |
+    /// |-------------------------|
+    pub fn to_table(&self) -> Table {
+        Table::new(vec![
+            TableRow::new(vec![TableCell::new()
+                .add_paragraph(Paragraph::new().add_run(
+                    Run::new().add_text(&format!("Vocabulario: {}", self.word)),
+                ))]),
+            TableRow::new(vec![TableCell::new()
+                .add_paragraph(Paragraph::new().add_run(
+                    Run::new().add_text(&format!("Frase Completa: {}", self.example)),
+                ))]),
+            TableRow::new(vec![TableCell::new().add_paragraph(
+                Paragraph::new().add_run(Run::new().add_image(Pic::new(&self.image))),
+            )]),
+        ])
+    }
+
+    /// Return a table with the visual flashcards
+    /// |-------------------------|-------------------------|-------------------------|
+    /// | Vocabulario: word       | Vocabulario: word       | Vocabulario: word       |
+    /// |-------------------------|-------------------------|-------------------------|
+    /// | Frase Completa: example | Frase Completa: example | Frase Completa: example |
+    /// |-------------------------|-------------------------|-------------------------|
+    /// | Foto / Media: image     | Foto / Media: image     | Foto / Media: image     |
+    /// |-------------------------|-------------------------|-------------------------|
+    pub fn to_tables(vocabs: &[VisualFlashCard]) -> Table {
+        Table::new(vec![
+            TableRow::new(
+                vocabs
+                    .iter()
+                    .map(|x| {
+                        TableCell::new().add_paragraph(
+                            Paragraph::new()
+                                .add_run(Run::new().add_text(&format!("Vocabulario: {}", x.word))),
+                        )
+                    })
+                    .collect(),
+            ),
+            TableRow::new(
+                vocabs
+                    .iter()
+                    .map(|x| {
+                        TableCell::new().add_paragraph(Paragraph::new().add_run(
+                            Run::new().add_text(&format!("Frase Completa: {}", x.example)),
+                        ))
+                    })
+                    .collect(),
+            ),
+            TableRow::new(
+                vocabs
+                    .iter()
+                    .map(|x| {
+                        TableCell::new().add_paragraph(
+                            Paragraph::new().add_run(Run::new().add_image(Pic::new(&x.image))),
+                        )
+                    })
+                    .collect(),
+            ),
+        ])
+    }
+}
+
 const IMAGE_RANDOM_POOL_SIZE: u32 = 10;
 
 #[async_trait]
-impl PipelineStage for VisualVocab {
-    async fn process(&self, _input: PipelineInput) -> Result<Vec<PipelineOutput>, &'static str> {
-        let _vocabs = create_visual_vocabs(&self.vocab)
+impl PipelineStage for VisualVocabPipeline {
+    async fn process(&self, input: PipelineInput) -> Result<Vec<PipelineOutput>, &'static str> {
+        // parse input
+        let row: usize = get_or_default(&input, "row", 6);
+        let col: usize = get_or_default(&input, "col", 3);
+        let name: String = get_or_default(&input, "name", "Estudiante".to_string());
+        let period: String = get_or_default(&input, "period", "Segunda".to_string());
+        let filename: String = get_or_default(&input, "filename", "visual_vocab.docx".to_string());
+
+        // pick random words
+        let mut words = self.vocab.clone();
+        let mut result: Vec<Flashcard> = vec![];
+        for _ in 0..row * col {
+            let word = words.remove(random::<usize>() % words.len());
+            result.push(word);
+        }
+
+        // create visual flashcards
+        info!(target: "visual_vocab", "Creating visual flashcards");
+        let vocabs = create_visual_vocabs(words.as_slice())
             .await
             .expect("should have created visual flashcards");
-        Ok(vec![])
+
+        // create document
+        info!(target: "visual_vocab", "Creating document");
+        let mut docx = Docx::new();
+        docx = docx
+            .header(
+                Header::new().add_paragraph(
+                    Paragraph::new().add_run(
+                        Run::new()
+                            .add_text(&format!("Nombre: {}", name))
+                            .add_tab()
+                            .add_text(&format!("Hora: {}", period)),
+                    ),
+                ),
+            ).add_paragraph(
+                Paragraph::new().add_run(Run::new()
+                    .add_text("Escoge 18 palabras del vocabulario de esta unidad.")
+                    .add_break(BreakType::TextWrapping)
+                    .add_text("Escribe la palabra de vocabulario y una frase completa con la palabra. Dibuja una foto que representa la palabra."))
+            );
+        for i in 1..row {
+            let table = VisualFlashCard::to_tables(&vocabs[(i - 1) * col..i * col]);
+            docx = docx.add_table(table);
+        }
+
+        // save document
+        let mut buffer = Cursor::new(Vec::new());
+        docx.build()
+            .pack(&mut buffer)
+            .expect("should have built document");
+        Ok(vec![PipelineOutput::Document {
+            name: filename,
+            content: buffer.into_inner(),
+        }])
     }
 }
 
 /// Create visual flashcards
-async fn create_visual_vocabs(
-    vocabs: &[Flashcard],
-) -> Result<Vec<VisualFlashCard>, &'static str> {
+async fn create_visual_vocabs(vocabs: &[Flashcard]) -> Result<Vec<VisualFlashCard>, &'static str> {
     let mut result: Vec<VisualFlashCard> = vec![];
     let mut tasks = vec![];
     for vocab in vocabs.iter() {
@@ -182,6 +304,16 @@ fn cos_similarity(a: &[f32], b: &[f32]) -> f32 {
         b_norm += b[i] * b[i];
     }
     dot_product / (a_norm * b_norm).sqrt()
+}
+
+/// Convert cm to English metric unit
+fn cm(cm: f32) -> usize {
+    (cm * 360_000.0) as usize
+}
+
+/// Convert point to English metric unit
+fn pixel(point: f32) -> usize {
+    (point * 9525.0) as usize
 }
 
 #[cfg(test)]
