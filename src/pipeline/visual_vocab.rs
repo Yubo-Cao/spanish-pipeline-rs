@@ -333,7 +333,7 @@ async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, &'sta
 /// - `limit` is the maximum number of results to return. If 0, return all results
 /// - `threshold` is the minimum similarity score to return a result
 /// Return a list ranked by relevance of the results
-pub fn deep_search(
+fn deep_search(
     query: &str,
     contents: &[String],
     limit: usize,
