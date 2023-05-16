@@ -2436,6 +2436,7 @@ dependencies = [
  "serde_yaml",
  "simple_logger",
  "tokio",
+ "torch-sys",
  "url",
 ]
 

@@ -29,5 +29,6 @@ serde = "1.0.163"
 serde_json = "1.0.96"
 serde_yaml = "0.9.21"
 simple_logger = { version = "4.1.0", features = ["colors"] }
+torch-sys = { version = "^0.12.0", features = ["download-libtorch"] }
 tokio = { version = "^1.11", features = ["full"] }
 url = "2.3.1"
