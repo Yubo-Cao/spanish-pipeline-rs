@@ -5,6 +5,7 @@ edition = "2021"
 
 
 [dependencies]
+async-trait = "0.1.68"
 ego-tree = "0.6.2"
 html5ever = "0.26.0"
 json5 = "0.4.1"

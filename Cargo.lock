@@ -77,6 +77,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-trait"
+version = "0.1.68"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9ccdd8f2a161be9bd5c023df56f1b2a0bd1d83872ae53b71a84a12c9bf6e842"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.16",
+]
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2063,6 +2074,7 @@ dependencies = [
 name = "spanish_pipeline"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "ego-tree",
  "html5ever",
  "json5",
