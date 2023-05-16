@@ -9,21 +9,27 @@ use rust_bert::pipelines::sentence_embeddings::{
     builder::SentenceEmbeddingsBuilder, SentenceEmbeddingsModelType,
 };
 
-use super::{get_or_default, Flashcard, PipelineInput, PipelineOutput, PipelineStage};
+use super::{Flashcard, PipelineOutput, PipelineStage};
 use crate::spider::{
     google_image::image_search_max,
     spanish_dict::{search_vocab, DictionaryDefinition, DictionaryExample},
 };
 
-struct VisualVocabPipeline {
-    vocab: Vec<Flashcard>,
+/// A pipeline for making visual vocab
+pub struct VisualVocabPipeline {
+    row: usize,
+    col: usize,
+    filename: String,
+    period: String,
+    name: String,
 }
 
-struct VisualFlashCard {
-    word: String,
-    definition: String,
-    image: Vec<u8>,
-    example: String,
+/// A representation of the results created by VisualVocabPipeline
+pub struct VisualFlashCard {
+    pub word: String,
+    pub definition: String,
+    pub image: Vec<u8>,
+    pub example: String,
 }
 
 impl VisualFlashCard {
@@ -80,9 +86,11 @@ impl VisualFlashCard {
                 vocabs
                     .iter()
                     .map(|x| {
-                        TableCell::new().add_paragraph(Paragraph::new().add_run(
-                            Run::new().add_text(format!("Frase Completa: {}", x.example)),
-                        ))
+                        TableCell::new().add_paragraph(
+                            Paragraph::new().add_run(
+                                Run::new().add_text(format!("Frase Completa: {}", x.example)),
+                            ),
+                        )
                     })
                     .collect(),
             ),
@@ -104,16 +112,17 @@ const IMAGE_RANDOM_POOL_SIZE: u32 = 10;
 
 #[async_trait]
 impl PipelineStage for VisualVocabPipeline {
-    async fn process(&self, input: PipelineInput) -> Result<Vec<PipelineOutput>, &'static str> {
-        // parse input
-        let row: usize = get_or_default(&input, "row", 6);
-        let col: usize = get_or_default(&input, "col", 3);
-        let name: String = get_or_default(&input, "name", "Estudiante".to_string());
-        let period: String = get_or_default(&input, "period", "Segunda".to_string());
-        let filename: String = get_or_default(&input, "filename", "visual_vocab.docx".to_string());
+    async fn run(&self, vocab: Vec<Flashcard>) -> Result<Vec<PipelineOutput>, &'static str> {
+        let VisualVocabPipeline {
+            row,
+            col,
+            name,
+            period,
+            filename,
+        } = self;
 
         // pick random words
-        let mut words = self.vocab.clone();
+        let mut words = vocab.clone();
         let mut result: Vec<Flashcard> = vec![];
         for _ in 0..row * col {
             let word = words.remove(random::<usize>() % words.len());
@@ -145,7 +154,7 @@ impl PipelineStage for VisualVocabPipeline {
                     .add_break(BreakType::TextWrapping)
                     .add_text("Escribe la palabra de vocabulario y una frase completa con la palabra. Dibuja una foto que representa la palabra."))
             );
-        for i in 1..row {
+        for i in 1..*row {
             let table = VisualFlashCard::to_tables(&vocabs[(i - 1) * col..i * col]);
             docx = docx.add_table(table);
         }
@@ -156,9 +165,68 @@ impl PipelineStage for VisualVocabPipeline {
             .pack(&mut buffer)
             .expect("should have built document");
         Ok(vec![PipelineOutput::Document {
-            name: filename,
+            name: filename.to_string(),
             content: buffer.into_inner(),
         }])
+    }
+
+    fn get_command() -> clap::Command {
+        clap::Command::new("visual_vocab")
+            .arg(
+                clap::Arg::new("row")
+                    .help("Number of rows")
+                    .short('r')
+                    .long("row")
+                    .required(false)
+                    .default_missing_value("3"),
+            )
+            .arg(
+                clap::Arg::new("col")
+                    .help("Number of columns")
+                    .short('c')
+                    .long("col")
+                    .required(false)
+                    .default_missing_value("6"),
+            )
+            .arg(
+                clap::Arg::new("name")
+                    .help("Name of the student")
+                    .short('n')
+                    .long("name")
+                    .required(true),
+            )
+            .arg(
+                clap::Arg::new("period")
+                    .help("Period of the student")
+                    .short('p')
+                    .long("period")
+                    .required(true),
+            )
+            .arg(
+                clap::Arg::new("filename")
+                    .help("Filename of the document")
+                    .short('f')
+                    .long("filename")
+                    .required(false)
+                    .default_missing_value("visual_vocab.docx"),
+            )
+    }
+
+    fn new(m: &clap::ArgMatches) -> Self {
+        let row: usize = *m.get_one("row").expect("should have row");
+        let col: usize = *m.get_one("col").expect("should have col");
+        let name: &str = m.get_one::<String>("name").expect("should have name");
+        let period: &str = m.get_one::<String>("period").expect("should have period");
+        let filename: &str = m
+            .get_one::<String>("filename")
+            .expect("should have filename");
+        VisualVocabPipeline {
+            row,
+            col,
+            name: name.to_string(),
+            period: period.to_string(),
+            filename: filename.to_string(),
+        }
     }
 }
 
@@ -308,16 +376,6 @@ fn cos_similarity(a: &[f32], b: &[f32]) -> f32 {
         b_norm += b[i] * b[i];
     }
     dot_product / (a_norm * b_norm).sqrt()
-}
-
-/// Convert cm to English metric unit
-fn cm(cm: f32) -> usize {
-    (cm * 360_000.0) as usize
-}
-
-/// Convert point to English metric unit
-fn pixel(point: f32) -> usize {
-    (point * 9525.0) as usize
 }
 
 #[cfg(test)]
