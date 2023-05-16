@@ -7,7 +7,7 @@ use rust_bert::pipelines::sentence_embeddings::{
 
 use super::{Flashcard, PipelineInput, PipelineOutput, PipelineStage};
 use crate::spider::{
-    google_image::{image_search_max},
+    google_image::image_search_max,
     spanish_dict::{search_vocab, DictionaryDefinition, DictionaryExample},
 };
 
@@ -27,22 +27,32 @@ const IMAGE_RANDOM_POOL_SIZE: u32 = 10;
 #[async_trait]
 impl PipelineStage for VisualVocab {
     async fn process(&self, _input: PipelineInput) -> Result<Vec<PipelineOutput>, &'static str> {
-        let mut result: Vec<VisualFlashCard> = vec![];
-        let mut tasks = vec![];
-        for vocab in self.vocab.iter() {
-            let vocab = vocab.clone();
-            let task = tokio::spawn(async move {
-                create_visual_vocab(&vocab)
-                    .await
-                    .expect("should have created a visual flashcard")
-            });
-            tasks.push(task);
-        }
-        for task in tasks {
-            result.push(task.await.expect("should have awaited task"));
-        }
+        let _vocabs = create_visual_vocabs(&self.vocab)
+            .await
+            .expect("should have created visual flashcards");
         Ok(vec![])
     }
+}
+
+/// Create visual flashcards
+async fn create_visual_vocabs(
+    vocabs: &[Flashcard],
+) -> Result<Vec<VisualFlashCard>, &'static str> {
+    let mut result: Vec<VisualFlashCard> = vec![];
+    let mut tasks = vec![];
+    for vocab in vocabs.iter() {
+        let vocab = vocab.clone();
+        let task = tokio::spawn(async move {
+            create_visual_vocab(&vocab)
+                .await
+                .expect("should have created a visual flashcard")
+        });
+        tasks.push(task);
+    }
+    for task in tasks {
+        result.push(task.await.expect("should have awaited task"));
+    }
+    Ok(result)
 }
 
 /// Create a visual flashcard
@@ -126,7 +136,7 @@ async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, &'sta
 /// Return a list ranked by relevance of the results
 pub fn deep_search(
     query: &str,
-    contents: &Vec<String>,
+    contents: &[String],
     limit: usize,
     threshold: f32,
 ) -> Vec<(usize, f32)> {
@@ -162,7 +172,7 @@ pub fn deep_search(
     }
 }
 
-fn cos_similarity(a: &Vec<f32>, b: &Vec<f32>) -> f32 {
+fn cos_similarity(a: &[f32], b: &[f32]) -> f32 {
     let mut dot_product = 0.0;
     let mut a_norm = 0.0;
     let mut b_norm = 0.0;
@@ -198,7 +208,7 @@ mod test {
             "each sentence is converted".to_string(),
             "this is a different sentence".to_string(),
         ];
-        let results = deep_search(query, &contents.to_vec(), 0, 0.0);
+        let results = deep_search(query, contents.as_ref(), 0, 0.0);
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].0, 0);
     }

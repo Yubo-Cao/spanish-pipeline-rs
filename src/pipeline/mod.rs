@@ -27,6 +27,6 @@ pub enum PipelineInput {
 
 /// Represents a pipeline stage.
 #[async_trait]
-trait PipelineStage {
+pub trait PipelineStage {
     async fn process(&self, input: PipelineInput) -> Result<Vec<PipelineOutput>, &'static str>;
 }
