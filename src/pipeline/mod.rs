@@ -70,3 +70,11 @@ impl std::fmt::Display for PipelineError {
         write!(f, "{}", self.message)
     }
 }
+
+impl PipelineError {
+    pub fn new(message: &str) -> Self {
+        Self {
+            message: message.to_owned(),
+        }
+    }
+}

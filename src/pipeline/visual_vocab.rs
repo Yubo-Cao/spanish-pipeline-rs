@@ -12,13 +12,12 @@ use rust_bert::pipelines::sentence_embeddings::{
 use tokio::sync::{Mutex, OnceCell};
 use tokio::task;
 
-use super::{Flashcard, Pipeline, PipelineIO};
+use super::{Flashcard, Pipeline, PipelineError, PipelineIO};
 use crate::{
     error::CliError,
     spider::{
         google_image::image_search_max,
         spanish_dict::{search_vocab, DictionaryDefinition, DictionaryExample},
-        SpiderError,
     },
 };
 
@@ -268,16 +267,16 @@ async fn create_visual_vocabs(vocabs: &[Flashcard]) -> Result<Vec<VisualFlashCar
 }
 
 /// Create a visual flashcard
-async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, SpiderError> {
+async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, PipelineError> {
     info!(target: "visual_vocab", "Creating visual flashcard for {}", vocab);
 
     let mut images = image_search_max(&vocab.word, IMAGE_RANDOM_POOL_SIZE)
         .await
-        .map_err(|e| SpiderError::new(&format!("Error getting images: {}", e)))?;
+        .map_err(|e| PipelineError::new(&format!("Error getting images: {}", e)))?;
 
     let definition = search_vocab(&vocab.word)
         .await
-        .map_err(|e| SpiderError::new(&format!("Error searching for definition: {}", e)))?;
+        .map_err(|e| PipelineError::new(&format!("Error searching for definition: {}", e)))?;
 
     let image = loop {
         let img = images.remove(random::<usize>() % images.len());
@@ -293,7 +292,7 @@ async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, Spide
     let image = match image {
         Some(img) => img,
         None => {
-            return Err(SpiderError::new("No image found"));
+            return Err(PipelineError::new("No image found"));
         }
     };
     info!(target: "visual_vocab", "Got image for {}", vocab);
