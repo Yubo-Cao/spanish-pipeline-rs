@@ -38,15 +38,19 @@ impl fmt::Display for GoogleImage {
 impl Image {
     /// Get the bytes of an image
     pub async fn get_bytes(image: &GoogleImage) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        if let Ok(resp) = CLIENT.get(&image.full.src).send().await {
-            if let Ok(bytes) = resp.bytes().await {
-                return Ok(bytes.to_vec());
-            }
-        }
-        Err(Box::new(SpiderError::new(&format!(
-            "failed to get bytes for image: {}",
-            image
-        ))))
+        let resp = CLIENT.get(&image.full.src).send().await.map_err(|e| {
+            SpiderError::new(&format!(
+                "failed to get bytes for image: {} because\n{}",
+                image, e
+            ))
+        })?;
+        let bytes = resp.bytes().await.map_err(|e| {
+            SpiderError::new(&format!(
+                "failed to get bytes for image: {} because\n{}",
+                image, e
+            ))
+        })?;
+        Ok(bytes.to_vec())
     }
 }
 
