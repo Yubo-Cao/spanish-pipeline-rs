@@ -1,11 +1,14 @@
 use ego_tree::NodeRef;
 use html5ever::tree_builder::QuirksMode;
-use log::debug;
+use log::{debug, info};
 use once_cell::sync::Lazy;
+use rust_bert::pipelines::keywords_extraction::KeywordExtractionModel;
 use scraper::{node::Node, ElementRef, Html, Selector};
+use tokio::sync::{Mutex, OnceCell};
+use tokio::task;
 use url::form_urlencoded;
 
-use super::CLIENT;
+use super::{SpiderError, CLIENT};
 
 /// Represents an example of a word in a dictionary
 #[derive(Debug)]
@@ -46,10 +49,79 @@ pub struct DictionaryEntry {
 const LANG_EN: &str = "en";
 const LANG_ES: &str = "es";
 
+static KEYWORD_MODEL: OnceCell<Mutex<KeywordExtractionModel>> = OnceCell::const_new();
+
 /**
 Perform a search of a word in SpanishDict.com
  */
-pub async fn search_vocab(word: &str) -> Result<DictionaryEntry, &'static str> {
+pub async fn search_vocab(word: &str) -> Result<DictionaryEntry, Box<dyn std::error::Error>> {
+    let _lock = KEYWORD_MODEL
+        .get_or_init(|| async {
+            task::spawn_blocking(move || {
+                info!(target: "spanish_dict", "loading keyword model");
+                let model = KeywordExtractionModel::new(Default::default())
+                    .expect("should be able to load keyword model");
+                Mutex::new(model)
+            })
+            .await
+            .expect("should be able to get model")
+        })
+        .await
+        .lock();
+
+    let model = _lock.await;
+    for _ in 0..2 {
+        match search_vocab_inner(word).await {
+            Ok(entry) => {
+                if entry.definitions.is_empty() {
+                    info!(target: "spanish_dict", "failed to find any definitions for word: {}", word);
+                } else {
+                    return Ok(entry);
+                }
+            }
+            Err(e) => {
+                info!(target: "spanish_dict", "failed to search for word: {} because\n{}", word, e);
+            }
+        }
+    }
+    for _ in 0..2 {
+        let prediction = model.predict(&[word])?;
+        match prediction.get(0) {
+            Some(keyword) => {
+                let keyword = match keyword.get(0) {
+                    Some(keyword) => &keyword.text,
+                    None => {
+                        info!(target: "spanish_dict", "failed to find any keywords for word: {}", word);
+                        continue;
+                    }
+                };
+                info!(target: "spanish_dict", "found keyword: {}", keyword);
+                match search_vocab_inner(keyword).await {
+                    Ok(entry) => {
+                        if entry.definitions.is_empty() {
+                            info!(target: "spanish_dict", "failed to find any definitions for word: {}", keyword);
+                        } else {
+                            return Ok(entry);
+                        }
+                    }
+                    Err(e) => {
+                        info!(target: "spanish_dict", "failed to search for word: {} because\n{}", keyword, e);
+                    }
+                }
+            }
+            None => {
+                info!(target: "spanish_dict", "failed to find any keywords for word: {}", word);
+            }
+        }
+    }
+
+    Err(Box::new(SpiderError::new(&format!(
+        "failed to search for word: {}",
+        word
+    ))))
+}
+
+async fn search_vocab_inner(word: &str) -> Result<DictionaryEntry, &'static str> {
     let encoded = form_urlencoded::Serializer::new(String::new())
         .append_key_only(word)
         .finish();
@@ -223,7 +295,7 @@ mod test {
 
     #[tokio::test]
     async fn search_light() {
-        let result = search_vocab("luz").await.unwrap();
+        let result = search_vocab_inner("luz").await.unwrap();
         assert_eq!(result.word, "luz");
         assert!(!result.definitions.is_empty());
         dbg!(result);
