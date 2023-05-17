@@ -7,6 +7,8 @@ use url::form_urlencoded;
 
 use super::CLIENT;
 
+/// Represents an image
+#[derive(Debug)]
 pub struct Image {
     pub src: String,
     pub alt: String,
@@ -18,6 +20,8 @@ impl fmt::Display for Image {
     }
 }
 
+/// Represents an image from google image search
+#[derive(Debug)]
 pub struct GoogleImage {
     pub thumb: Image,
     pub full: Image,
@@ -34,7 +38,7 @@ impl fmt::Display for GoogleImage {
 impl Image {
     /// Get the bytes of an image
     pub async fn get_bytes(image: &GoogleImage) -> Result<Vec<u8>, &'static str> {
-        if let Ok(resp) = CLIENT.get(&image.url).send().await {
+        if let Ok(resp) = CLIENT.get(&image.full.src).send().await {
             if let Ok(bytes) = resp.bytes().await {
                 return Ok(bytes.to_vec());
             }
@@ -179,6 +183,8 @@ mod test {
     async fn test_search() {
         let result = image_search("cat", 0).await;
         assert!(result.is_ok());
-        assert!(!result.unwrap().is_empty());
+        let result = result.unwrap();
+        assert!(!result.is_empty());
+        dbg!(result);
     }
 }

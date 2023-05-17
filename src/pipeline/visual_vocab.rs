@@ -1,13 +1,14 @@
 use std::io::Cursor;
+use std::sync::Mutex;
 
 use async_trait::async_trait;
 use clap::Parser;
 use docx_rs::*;
+use lazy_static::lazy_static;
 use log::{error, info};
-use once_cell::sync::Lazy;
 use rand::random;
 use rust_bert::pipelines::sentence_embeddings::{
-    builder::SentenceEmbeddingsBuilder, SentenceEmbeddingsModelType,
+    builder::SentenceEmbeddingsBuilder, SentenceEmbeddingsModel, SentenceEmbeddingsModelType,
 };
 
 use super::{Flashcard, Pipeline, PipelineIO};
@@ -297,6 +298,14 @@ async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, &'sta
     })
 }
 
+lazy_static! {
+    static ref MODEL: Mutex<SentenceEmbeddingsModel> = Mutex::new(
+        SentenceEmbeddingsBuilder::remote(SentenceEmbeddingsModelType::AllMiniLmL12V2)
+            .create_model()
+            .expect("should have created a model")
+    );
+}
+
 /// Search for a query in a list of strings
 /// - `query` is the string to search for
 /// - `contents` is the list of strings to search in
@@ -309,11 +318,7 @@ fn deep_search(
     limit: usize,
     threshold: f32,
 ) -> Vec<(usize, f32)> {
-    let model = Lazy::new(|| {
-        SentenceEmbeddingsBuilder::remote(SentenceEmbeddingsModelType::AllMiniLmL12V2)
-            .create_model()
-            .expect("should have created a model")
-    });
+    let model = MODEL.lock().unwrap();
     let query_embedding = model.encode(&[query]).expect("should have encoded query")[0].to_owned();
     let content_embedding = model
         .encode(contents)
@@ -369,8 +374,8 @@ mod test {
         println!("{:?}", output);
     }
 
-    #[test]
-    fn test_deep_search() {
+    #[tokio::test]
+    async fn test_deep_search() {
         let query = "this is an example sentence";
         let contents = [
             "this example sentence is the first sentence".to_string(),

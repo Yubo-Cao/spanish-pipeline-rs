@@ -138,13 +138,14 @@ impl Pipeline for LoadPipeline {
 }
 
 fn textify_row(row: &docx_rs::TableRow) -> String {
-    "| ".to_string() + row
-        .cells
-        .iter()
-        .map(|x| textify_cell(x))
-        .collect::<Vec<_>>()
-        .join(" | ")
-        .trim()
+    "| ".to_string()
+        + row
+            .cells
+            .iter()
+            .map(|x| textify_cell(x))
+            .collect::<Vec<_>>()
+            .join(" | ")
+            .trim()
         + " |"
 }
 

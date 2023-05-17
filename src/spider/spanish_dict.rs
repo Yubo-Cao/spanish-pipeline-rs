@@ -1,7 +1,6 @@
 use ego_tree::NodeRef;
 use html5ever::tree_builder::QuirksMode;
 use log::debug;
-use log::info;
 use once_cell::sync::Lazy;
 use scraper::{node::Node, ElementRef, Html, Selector};
 use url::form_urlencoded;
@@ -179,7 +178,7 @@ pub async fn search_vocab(word: &str) -> Result<DictionaryEntry, &'static str> {
                 }
             }
             &_ => {
-                info!(target: "spanish_dict", "unknown dictionary: {}", id);
+                debug!(target: "spanish_dict", "unknown dictionary: {}", id);
             }
         }
     }
