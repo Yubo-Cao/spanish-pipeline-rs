@@ -4,17 +4,28 @@ pub mod error;
 pub mod pipeline;
 pub mod spider;
 
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use error::CliError;
 use fern::colors::{Color, ColoredLevelConfig};
 use log::info;
 use pipeline::Pipeline;
 
-const PIPELINES: [&str; 2] = ["load", "visual_vocab"];
+const PIPELINES: [&str; 3] = ["load", "visual_vocab", "transform"];
 
+#[derive(Parser)]
 struct Cli {
+    /// The name of the group of output files.
+    #[clap(default_value = "default")]
     name: String,
-    level: log::LevelFilter,
+
+    /// The log level.
+    level: Option<log::LevelFilter>,
+
+    /// Quiet mode.
+    #[clap(short, long, action = ArgAction::SetTrue)]
+    quiet: Option<bool>,
+
+    #[clap(skip)]
     pipelines: Vec<Box<dyn Pipeline>>,
 }
 
@@ -24,38 +35,19 @@ fn parse_arguments() -> Result<Cli, Box<dyn std::error::Error>> {
     let args = std::env::args().collect::<Vec<String>>();
     let mut pipelines = Vec::new();
     let mut i = 1;
-    let mut name = "default";
-    let mut level = log::LevelFilter::Info;
+
+    // parse the cli arguments
+    let start = i;
+    while i < args.len() && !PIPELINES.contains(&args[i].as_str()) {
+        i += 1;
+    }
+    let mut cli = Cli::try_parse_from(&args[start..i])?;
+
+    // parse the pipelines
     while i < args.len() {
         let pipeline = &args[i];
         if !PIPELINES.contains(&pipeline.as_str()) {
-            if pipeline.starts_with('-') {
-                match pipeline.as_str() {
-                    "-n" | "--name" => {
-                        i += 1;
-                        name = &args[i];
-                    }
-                    "-l" | "--level" => {
-                        i += 1;
-                        level = match args[i].as_str() {
-                            "debug" => log::LevelFilter::Debug,
-                            "info" => log::LevelFilter::Info,
-                            "warn" => log::LevelFilter::Warn,
-                            "error" => log::LevelFilter::Error,
-                            _ => {
-                                return Err(CliError::new("Invalid log level").into());
-                            }
-                        };
-                    }
-                    _ => {
-                        return Err(CliError::new("Invalid option").into());
-                    }
-                }
-                i += 1;
-                continue;
-            } else {
-                return Err(CliError::new(&format!("Invalid pipeline: {}", pipeline)).into());
-            }
+            return Err(CliError::new(&format!("Invalid pipeline: {}", pipeline)).into());
         }
         let start = i;
         i += 1;
@@ -69,6 +61,9 @@ fn parse_arguments() -> Result<Cli, Box<dyn std::error::Error>> {
             "visual_vocab" => Box::new(
                 pipeline::visual_vocab::VisualVocabPipeline::try_parse_from(&args[start..i])?,
             ),
+            "transform" => Box::new(pipeline::transform::TransformPipeline::try_parse_from(
+                &args[start..i],
+            )?),
             _ => unreachable!(),
         };
 
@@ -77,12 +72,9 @@ fn parse_arguments() -> Result<Cli, Box<dyn std::error::Error>> {
     if pipelines.is_empty() {
         return Err(CliError::new("No pipeline specified").into());
     }
+    cli.pipelines = pipelines;
 
-    Ok(Cli {
-        level,
-        name: name.to_string(),
-        pipelines,
-    })
+    Ok(cli)
 }
 
 #[tokio::main]
@@ -91,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         name,
         level,
         pipelines,
+        quiet,
     } = match parse_arguments() {
         Ok(cli) => cli,
         Err(err) => {
@@ -98,30 +91,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
     };
-
     let colors = ColoredLevelConfig::new()
         .info(Color::Green)
         .warn(Color::Yellow)
         .error(Color::Magenta);
-    fern::Dispatch::new()
-        .format(move |out, message, record| {
-            out.finish(format_args!(
-                "[{}] [{}] {}",
-                record.target(),
-                colors.color(record.level()),
-                message
-            ))
-        })
-        .level(level)
-        .level_for("cached_path", log::LevelFilter::Error)
+    let mut dispatch = fern::Dispatch::new().format(move |out, message, record| {
+        out.finish(format_args!(
+            "[{}] [{}] {}",
+            record.target(),
+            colors.color(record.level()),
+            message
+        ))
+    });
+    if let Some(level) = level {
+        dispatch = dispatch.level(level);
+    }
+    if let Some(_) = quiet {
+        dispatch = dispatch.level(log::LevelFilter::Off);
+    }
+    dispatch
         .chain(std::io::stdout())
-        .apply()
-        .unwrap();
+        .chain(fern::log_file("output.log")?)
+        .apply()?;
     info!(target: "main", "logger initialized");
 
     let mut input = None;
     for pipeline in pipelines {
+        info!(target: "main", "running pipeline: {}", pipeline.name());
         input = Some(pipeline.run(input).await?);
+        info!(target: "main", "finished pipeline: {}", pipeline.name());
     }
     info!(target: "main", "finished");
 

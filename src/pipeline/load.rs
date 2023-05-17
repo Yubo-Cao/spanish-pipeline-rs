@@ -135,6 +135,10 @@ impl Pipeline for LoadPipeline {
             }
         }
     }
+
+    fn name(&self) -> &'static str {
+        "load"
+    }
 }
 
 fn textify_row(row: &docx_rs::TableRow) -> String {

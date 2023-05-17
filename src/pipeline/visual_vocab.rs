@@ -240,6 +240,10 @@ impl Pipeline for VisualVocabPipeline {
             content: buffer.into_inner(),
         })
     }
+
+    fn name(&self) -> &'static str {
+        "visual_vocab"
+    }
 }
 
 /// Create visual flashcards

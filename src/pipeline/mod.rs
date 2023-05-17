@@ -1,6 +1,7 @@
 mod docx;
 pub mod flashcard;
 pub mod load;
+pub mod transform;
 pub mod visual_vocab;
 
 use async_trait::async_trait;
@@ -54,10 +55,13 @@ pub trait Pipeline {
         &self,
         input: Option<PipelineIO>,
     ) -> Result<PipelineIO, Box<dyn std::error::Error>>;
+
+    /// Return the name of the pipeline.
+    fn name(&self) ->  &'static str;
 }
 
 /// Represents a Pipeline Error
- 
+
 #[derive(Debug)]
 pub struct PipelineError {
     message: String,
