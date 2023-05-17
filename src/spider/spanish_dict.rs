@@ -58,7 +58,7 @@ pub async fn search_vocab(word: &str) -> Result<DictionaryEntry, Box<dyn std::er
     let _lock = KEYWORD_MODEL
         .get_or_init(|| async {
             task::spawn_blocking(move || {
-                info!(target: "spanish_dict", "loading keyword model");
+                info!(target: "spanish_dict", "Loading keyword model");
                 let model = KeywordExtractionModel::new(Default::default())
                     .expect("should be able to load keyword model");
                 Mutex::new(model)
@@ -79,9 +79,7 @@ pub async fn search_vocab(word: &str) -> Result<DictionaryEntry, Box<dyn std::er
                     return Ok(entry);
                 }
             }
-            Err(e) => {
-                info!(target: "spanish_dict", "failed to search for word: {} because\n{}", word, e);
-            }
+            Err(_) => {}
         }
     }
     for _ in 0..2 {
@@ -91,26 +89,30 @@ pub async fn search_vocab(word: &str) -> Result<DictionaryEntry, Box<dyn std::er
                 let keyword = match keyword.get(0) {
                     Some(keyword) => &keyword.text,
                     None => {
-                        info!(target: "spanish_dict", "failed to find any keywords for word: {}", word);
-                        continue;
+                        return Err(Box::new(SpiderError::new(&format!(
+                            "failed to retry with keyword for word: {}, no keyword found",
+                            word
+                        ))))
                     }
                 };
-                info!(target: "spanish_dict", "found keyword: {}", keyword);
+                info!(target: "spanish_dict", "retry with keyword: {}", keyword);
                 match search_vocab_inner(keyword).await {
                     Ok(entry) => {
                         if entry.definitions.is_empty() {
                             info!(target: "spanish_dict", "failed to find any definitions for word: {}", keyword);
                         } else {
+                            info!(target: "spanish_dict", "found definitions for word: {}", keyword);
                             return Ok(entry);
                         }
                     }
-                    Err(e) => {
-                        info!(target: "spanish_dict", "failed to search for word: {} because\n{}", keyword, e);
-                    }
+                    Err(_) => {}
                 }
             }
             None => {
-                info!(target: "spanish_dict", "failed to find any keywords for word: {}", word);
+                return Err(Box::new(SpiderError::new(&format!(
+                    "failed to retry with keyword for word: {}, no keyword found",
+                    word
+                ))))
             }
         }
     }
