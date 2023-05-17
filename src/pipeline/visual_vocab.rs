@@ -1,15 +1,15 @@
 use std::io::Cursor;
-use std::sync::Mutex;
+use tokio::sync::{Mutex, OnceCell};
 
 use async_trait::async_trait;
 use clap::Parser;
 use docx_rs::*;
-use once_cell::sync::Lazy;
 use log::{error, info};
 use rand::random;
 use rust_bert::pipelines::sentence_embeddings::{
     builder::SentenceEmbeddingsBuilder, SentenceEmbeddingsModel, SentenceEmbeddingsModelType,
 };
+use tokio::task;
 
 use super::{Flashcard, Pipeline, PipelineIO};
 use crate::{
@@ -238,13 +238,15 @@ async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, &'sta
     let mut image: Vec<u8> = vec![];
     let mut flag = false;
     while !images.is_empty() && !flag {
-        if let Ok(img) = images
-            .remove(random::<usize>() % images.len())
-            .get_bytes()
-            .await
-        {
-            image = img;
-            flag = true;
+        let img = images.remove(random::<usize>() % images.len());
+        match img.get_bytes().await {
+            Ok(buf) => {
+                image = buf;
+                flag = true;
+            }
+            Err(err) => {
+                error!(target: "visual_vocab", "Error getting image bytes: {}", err);
+            }
         }
     }
     if !flag {
@@ -287,7 +289,7 @@ async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, &'sta
         .collect();
 
     let definition = examples.iter().map(|x| x.0.to_owned()).collect::<Vec<_>>();
-    let rank = deep_search(&vocab.word, &definition, 1, 0.0);
+    let rank = deep_search(&vocab.word, &definition, 1, 0.0).await;
     let example = examples[rank[0].0].1.to_owned();
 
     Ok(VisualFlashCard {
@@ -298,13 +300,7 @@ async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, &'sta
     })
 }
 
-static MODEL: Lazy<Mutex<SentenceEmbeddingsModel>> = Lazy::new(|| {
-    Mutex::new(
-        SentenceEmbeddingsBuilder::remote(SentenceEmbeddingsModelType::AllMiniLmL12V2)
-            .create_model()
-            .expect("should have created a model"),
-    )
-});
+static MODEL: OnceCell<Mutex<SentenceEmbeddingsModel>> = OnceCell::const_new();
 
 /// Search for a query in a list of strings
 /// - `query` is the string to search for
@@ -312,13 +308,27 @@ static MODEL: Lazy<Mutex<SentenceEmbeddingsModel>> = Lazy::new(|| {
 /// - `limit` is the maximum number of results to return. If 0, return all results
 /// - `threshold` is the minimum similarity score to return a result
 /// Return a list ranked by relevance of the results
-fn deep_search(
+async fn deep_search(
     query: &str,
     contents: &[String],
     limit: usize,
     threshold: f32,
 ) -> Vec<(usize, f32)> {
-    let model = MODEL.lock().unwrap();
+    let model = MODEL
+        .get_or_init(|| async {
+            task::spawn_blocking(move || {
+                Mutex::new(
+                    SentenceEmbeddingsBuilder::remote(SentenceEmbeddingsModelType::AllMiniLmL12V2)
+                        .create_model()
+                        .expect("should have created a model"),
+                )
+            })
+            .await
+            .expect("should have awaited task")
+        })
+        .await
+        .lock()
+        .await;
     let query_embedding = model.encode(&[query]).expect("should have encoded query")[0].to_owned();
     let content_embedding = model
         .encode(contents)
@@ -382,8 +392,24 @@ mod test {
             "each sentence is converted".to_string(),
             "this is a different sentence".to_string(),
         ];
-        let results = deep_search(query, contents.as_ref(), 0, 0.0);
-        assert_eq!(results.len(), 3);
-        assert_eq!(results[0].0, 0);
+        let mut tasks = vec![];
+        for _ in 0..8 {
+            let contents = contents.clone();
+            let task = tokio::spawn(async move {
+                let results = deep_search(query, contents.as_ref(), 0, 0.0).await;
+                assert_eq!(results.len(), 3);
+                assert_eq!(results[0].0, 0);
+                results
+            });
+            tasks.push(task);
+        }
+        let mut results = vec![];
+        for task in tasks {
+            results.push(task.await.expect("should have awaited task"));
+        }
+        assert_eq!(results.len(), 8);
+        for i in 0..8 {
+            assert_eq!(results[i], results[0]);
+        }
     }
 }

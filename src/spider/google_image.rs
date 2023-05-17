@@ -1,6 +1,6 @@
 use core::fmt;
 
-use log::debug;
+use log::{debug, warn};
 use once_cell::sync::Lazy;
 use scraper::{Html, Selector};
 use url::form_urlencoded;
@@ -116,43 +116,49 @@ fn parse_google_image(x: &serde_json::Value) -> Option<GoogleImage> {
 `image_search` searches for images on google and returns up to 100 images.
  */
 pub async fn image_search(query: &str, offset: u32) -> Result<Vec<GoogleImage>, &'static str> {
-    let params = form_urlencoded::Serializer::new(String::new())
-        .append_pair("tbm", "isch")
-        .append_pair("q", query)
-        .append_pair("start", &offset.to_string())
-        .append_pair("ijn", &(offset / 100).to_string())
-        .finish();
-    let url = format!("https://www.google.com/search?{}", params);
-    debug!(target: "image_search", "url: {}", url);
-    let dom = Html::parse_document(&CLIENT.get(&url).send().await.unwrap().text().await.unwrap());
-    let script_selector = Lazy::new(|| Selector::parse("script").unwrap());
-    let json = dom
-        .select(&script_selector)
-        .find_map(|x| {
-            let text = x.text().collect::<String>();
-            if text.contains("AF_initDataCallback")
-                && !text.contains("ds:0")
-                && text.contains("ds:1")
-            {
-                return Some(text);
-            }
-            None
-        })
-        .expect("should have a script element");
-    let start_prefix = "AF_initDataCallback(";
-    let start = json.find(start_prefix).unwrap();
-    let end = json[start..].find("});").unwrap();
-    let json: serde_json::Value =
-        json5::from_str(&json[start + start_prefix.len()..end + 1]).expect("should be valid json");
-    let data = &json["data"][56][1][0][0][1][0];
-    let images = data
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(parse_google_image)
-        .collect::<Vec<_>>();
-    debug!(target: "image_search", "data parsed");
-    Ok(images)
+    for _ in 0..5 {
+        let params = form_urlencoded::Serializer::new(String::new())
+            .append_pair("tbm", "isch")
+            .append_pair("q", query)
+            .append_pair("start", &offset.to_string())
+            .append_pair("ijn", &(offset / 100).to_string())
+            .finish();
+        let url = format!("https://www.google.com/search?{}", params);
+        debug!(target: "image_search", "url: {}", url);
+        let dom =
+            Html::parse_document(&CLIENT.get(&url).send().await.unwrap().text().await.unwrap());
+        let script_selector = Lazy::new(|| Selector::parse("script").unwrap());
+        let json = dom
+            .select(&script_selector)
+            .find_map(|x| {
+                let text = x.text().collect::<String>();
+                if text.contains("AF_initDataCallback")
+                    && !text.contains("ds:0")
+                    && text.contains("ds:1")
+                {
+                    return Some(text);
+                }
+                None
+            })
+            .expect("should have a script element");
+        let start_prefix = "AF_initDataCallback(";
+        let start = json.find(start_prefix).unwrap();
+        let end = json[start..].find("});").unwrap();
+        let json: serde_json::Value = json5::from_str(&json[start + start_prefix.len()..end + 1])
+            .expect("should be valid json");
+        let data = &json["data"][56][1][0][0][1][0];
+        let images = data
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(parse_google_image)
+            .collect::<Vec<_>>();
+        debug!(target: "image_search", "data parsed");
+        if !images.is_empty() {
+            return Ok(images);
+        }
+    }
+    Err("no images found")
 }
 
 /**
@@ -164,6 +170,7 @@ pub async fn image_search_max(query: &str, max: u32) -> Result<Vec<GoogleImage>,
     while offset < max {
         let mut new_images = image_search(query, offset).await?;
         if new_images.is_empty() {
+            warn!(target: "image_search", "no more images");
             break;
         }
         offset += new_images.len() as u32;
