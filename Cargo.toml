@@ -6,7 +6,11 @@ authors = ["Yubo Cao <cao2006721@gmail.com"]
 description = "A pipeline for Spanish Homework"
 license = "MIT"
 
-
+[profile.release]
+strip = true
+codegen-units = 1
+panic = "abort"
+lto = true
 
 [dependencies]
 async-trait = "0.1.68"
