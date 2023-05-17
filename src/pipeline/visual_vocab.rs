@@ -1,14 +1,14 @@
 use std::io::Cursor;
-use tokio::sync::{Mutex, OnceCell};
 
 use async_trait::async_trait;
 use clap::Parser;
 use docx_rs::*;
-use log::{error, info};
+use log::{debug, error, info};
 use rand::random;
 use rust_bert::pipelines::sentence_embeddings::{
     builder::SentenceEmbeddingsBuilder, SentenceEmbeddingsModel, SentenceEmbeddingsModelType,
 };
+use tokio::sync::{Mutex, OnceCell};
 use tokio::task;
 
 use super::{Flashcard, Pipeline, PipelineIO};
@@ -306,7 +306,7 @@ async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, &'sta
     })
 }
 
-static MODEL: OnceCell<Mutex<SentenceEmbeddingsModel>> = OnceCell::const_new();
+static SENTENCE_EMBEDDER: OnceCell<Mutex<SentenceEmbeddingsModel>> = OnceCell::const_new();
 
 /// Search for a query in a list of strings
 /// - `query` is the string to search for
@@ -320,10 +320,16 @@ async fn deep_search(
     limit: usize,
     threshold: f32,
 ) -> Vec<(usize, f32)> {
-    let model = MODEL
+    debug!(target: "deep_search", "Searching for {} in {} contents", query, contents.len());
+    if contents.is_empty() {
+        info!(target: "deep_search", "No contents to search for {}", query);
+        return vec![];
+    }
+
+    let model = SENTENCE_EMBEDDER
         .get_or_init(|| async {
             task::spawn_blocking(move || {
-                info!(target: "deep_search", "Loading model");
+                info!(target: "deep_search", "Loading sentence embedder model");
                 Mutex::new(
                     SentenceEmbeddingsBuilder::remote(SentenceEmbeddingsModelType::AllMiniLmL12V2)
                         .create_model()
