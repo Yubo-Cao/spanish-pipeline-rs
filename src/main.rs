@@ -14,6 +14,7 @@ const PIPELINES: [&str; 2] = ["load", "visual_vocab"];
 
 struct Cli {
     name: String,
+    level: log::LevelFilter,
     pipelines: Vec<Box<dyn Pipeline>>,
 }
 
@@ -24,6 +25,7 @@ fn parse_arguments() -> Result<Cli, Box<dyn std::error::Error>> {
     let mut pipelines = Vec::new();
     let mut i = 1;
     let mut name = "default";
+    let mut level = log::LevelFilter::Info;
     while i < args.len() {
         let pipeline = &args[i];
         if !PIPELINES.contains(&pipeline.as_str()) {
@@ -33,30 +35,51 @@ fn parse_arguments() -> Result<Cli, Box<dyn std::error::Error>> {
                         i += 1;
                         name = &args[i];
                     }
+                    "-l" | "--level" => {
+                        i += 1;
+                        level = match args[i].as_str() {
+                            "debug" => log::LevelFilter::Debug,
+                            "info" => log::LevelFilter::Info,
+                            "warn" => log::LevelFilter::Warn,
+                            "error" => log::LevelFilter::Error,
+                            _ => {
+                                return Err(CliError::new("Invalid log level").into());
+                            }
+                        };
+                    }
                     _ => {
                         return Err(CliError::new("Invalid option").into());
                     }
                 }
+                i += 1;
+                continue;
+            } else {
+                return Err(CliError::new(&format!("Invalid pipeline: {}", pipeline)).into());
             }
-            return Err(CliError::new("Invalid pipeline").into());
         }
+        let start = i;
         i += 1;
         while i < args.len() && !PIPELINES.contains(&args[i].as_str()) {
             i += 1;
         }
         let result: Box<dyn Pipeline> = match pipeline.as_str() {
-            "load" => Box::new(pipeline::load::LoadPipeline::try_parse_from(&args[1..i])?),
+            "load" => Box::new(pipeline::load::LoadPipeline::try_parse_from(
+                &args[start..i],
+            )?),
             "visual_vocab" => Box::new(
-                pipeline::visual_vocab::VisualVocabPipeline::try_parse_from(&args[1..i])?,
+                pipeline::visual_vocab::VisualVocabPipeline::try_parse_from(&args[start..i])?,
             ),
             _ => unreachable!(),
         };
+
         pipelines.push(result);
     }
     if pipelines.is_empty() {
         return Err(CliError::new("No pipeline specified").into());
     }
+
     Ok(Cli {
+        level,
         name: name.to_string(),
         pipelines,
     })
@@ -64,6 +87,18 @@ fn parse_arguments() -> Result<Cli, Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let Cli {
+        name,
+        level,
+        pipelines,
+    } = match parse_arguments() {
+        Ok(cli) => cli,
+        Err(err) => {
+            println!("{}", err);
+            return Ok(());
+        }
+    };
+
     let colors = ColoredLevelConfig::new()
         .info(Color::Green)
         .warn(Color::Yellow)
@@ -77,20 +112,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 message
             ))
         })
-        .level(log::LevelFilter::Info)
+        .level(level)
         .level_for("cached_path", log::LevelFilter::Error)
         .chain(std::io::stdout())
         .apply()
         .unwrap();
     info!(target: "main", "logger initialized");
-
-    let Cli { name, pipelines } = match parse_arguments() {
-        Ok(cli) => cli,
-        Err(err) => {
-            println!("{}", err);
-            return Ok(());
-        }
-    };
 
     let mut input = None;
     for pipeline in pipelines {
