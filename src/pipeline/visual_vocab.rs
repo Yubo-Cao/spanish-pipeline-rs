@@ -127,13 +127,24 @@ impl VisualFlashCard {
                 vocabs
                     .iter()
                     .map(|x| {
-                        let image_width = size.0 / vocabs.len();
-                        let image_height = size.1 - super::docx::cm(0.5);
-                        TableCell::new().add_paragraph(Paragraph::new().add_run(
-                            Run::new().add_image(
-                                Pic::new(&x.image).size(image_width as u32, image_height as u32),
+                        let target_width = size.0 / vocabs.len();
+                        let target_height = size.1 - super::docx::cm(0.5);
+                        let pic = Pic::new(&x.image);
+                        let (width, height) = pic.size;
+                        let min = |a, b| if a < b { a } else { b };
+                        let ratio = min(
+                            target_width as f32 / width as f32,
+                            target_height as f32 / height as f32,
+                        );
+                        let final_width = (width as f32 * ratio) as u32;
+                        let final_height = (height as f32 * ratio) as u32;
+
+                        TableCell::new().add_paragraph(
+                            Paragraph::new().add_run(
+                                Run::new()
+                                    .add_image(Pic::new(&x.image).size(final_width, final_height)),
                             ),
-                        ))
+                        )
                     })
                     .collect(),
             ),

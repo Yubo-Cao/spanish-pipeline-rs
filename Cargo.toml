@@ -36,3 +36,4 @@ torch-sys = { version = "^0.12.0", features = ["download-libtorch"] }
 tokio = { version = "^1.11", features = ["full"] }
 url = "2.3.1"
 fern = { version = "0.6.2", features = ["colored"] }
+image = "0.24.6"
