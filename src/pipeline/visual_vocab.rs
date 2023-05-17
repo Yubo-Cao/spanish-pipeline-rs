@@ -1,8 +1,9 @@
 use std::io::Cursor;
 
 use async_trait::async_trait;
+use clap::Parser;
 use docx_rs::*;
-use log::info;
+use log::{error, info};
 use once_cell::sync::Lazy;
 use rand::random;
 use rust_bert::pipelines::sentence_embeddings::{
@@ -10,18 +11,30 @@ use rust_bert::pipelines::sentence_embeddings::{
 };
 
 use super::{Flashcard, Pipeline, PipelineIO};
-use crate::spider::{
-    google_image::image_search_max,
-    spanish_dict::{search_vocab, DictionaryDefinition, DictionaryExample},
+use crate::{
+    error::CliError,
+    spider::{
+        google_image::image_search_max,
+        spanish_dict::{search_vocab, DictionaryDefinition, DictionaryExample},
+    },
 };
 
 /// A pipeline for making visual vocab
+#[derive(Debug, Parser)]
 pub struct VisualVocabPipeline {
+    /// The number of rows
+    #[clap(short, long, default_value = "3")]
     row: usize,
+    /// The number of columns
+    #[clap(short, long, default_value = "6")]
     col: usize,
+    /// The name of the output file
+    #[clap(short, long, default_value = "visual_vocab.docx")]
     filename: String,
-    period: String,
+    /// The name of the student
     name: String,
+    /// The period of the student
+    period: String,
 }
 
 /// A representation of the results created by VisualVocabPipeline
@@ -106,13 +119,25 @@ impl VisualFlashCard {
             ),
         ])
     }
+
+    fn default() -> Self {
+        Self {
+            word: String::new(),
+            definition: String::new(),
+            image: vec![],
+            example: String::new(),
+        }
+    }
 }
 
 const IMAGE_RANDOM_POOL_SIZE: u32 = 10;
 
 #[async_trait]
 impl Pipeline for VisualVocabPipeline {
-    async fn run(&self, input: Option<PipelineIO>) -> Result<PipelineIO, &'static str> {
+    async fn run(
+        &self,
+        input: Option<PipelineIO>,
+    ) -> Result<PipelineIO, Box<dyn std::error::Error>> {
         let VisualVocabPipeline {
             row,
             col,
@@ -123,7 +148,7 @@ impl Pipeline for VisualVocabPipeline {
 
         let flashcard = match input {
             Some(PipelineIO::Flashcard(vocab)) => vocab,
-            _ => return Err("VisualVocabPipeline requires a vocab input"),
+            _ => return Err(CliError::new("No flashcard input").into()),
         };
 
         // pick random words
@@ -174,65 +199,6 @@ impl Pipeline for VisualVocabPipeline {
             content: buffer.into_inner(),
         })
     }
-
-    fn get_command() -> clap::Command {
-        clap::Command::new("visual_vocab")
-            .arg(
-                clap::Arg::new("row")
-                    .help("Number of rows")
-                    .short('r')
-                    .long("row")
-                    .required(false)
-                    .default_missing_value("3"),
-            )
-            .arg(
-                clap::Arg::new("col")
-                    .help("Number of columns")
-                    .short('c')
-                    .long("col")
-                    .required(false)
-                    .default_missing_value("6"),
-            )
-            .arg(
-                clap::Arg::new("name")
-                    .help("Name of the student")
-                    .short('n')
-                    .long("name")
-                    .required(true),
-            )
-            .arg(
-                clap::Arg::new("period")
-                    .help("Period of the student")
-                    .short('p')
-                    .long("period")
-                    .required(true),
-            )
-            .arg(
-                clap::Arg::new("filename")
-                    .help("Filename of the document")
-                    .short('f')
-                    .long("filename")
-                    .required(false)
-                    .default_missing_value("visual_vocab.docx"),
-            )
-    }
-
-    fn new(m: &clap::ArgMatches) -> Self {
-        let row: usize = *m.get_one("row").expect("should have row");
-        let col: usize = *m.get_one("col").expect("should have col");
-        let name: &str = m.get_one::<String>("name").expect("should have name");
-        let period: &str = m.get_one::<String>("period").expect("should have period");
-        let filename: &str = m
-            .get_one::<String>("filename")
-            .expect("should have filename");
-        VisualVocabPipeline {
-            row,
-            col,
-            name: name.to_string(),
-            period: period.to_string(),
-            filename: filename.to_string(),
-        }
-    }
 }
 
 /// Create visual flashcards
@@ -242,9 +208,13 @@ async fn create_visual_vocabs(vocabs: &[Flashcard]) -> Result<Vec<VisualFlashCar
     for vocab in vocabs.iter() {
         let vocab = vocab.clone();
         let task = tokio::spawn(async move {
-            create_visual_vocab(&vocab)
-                .await
-                .expect("should have created a visual flashcard")
+            match create_visual_vocab(&vocab).await {
+                Ok(vocab) => vocab,
+                Err(err) => {
+                    error!(target: "visual_vocab", "Error creating visual flashcard: {}", err);
+                    VisualFlashCard::default()
+                }
+            }
         });
         tasks.push(task);
     }
@@ -276,7 +246,7 @@ async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, &'sta
             flag = true;
         }
     }
-    if flag {
+    if !flag {
         return Err("should have found an image");
     }
 
