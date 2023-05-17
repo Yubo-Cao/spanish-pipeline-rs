@@ -17,6 +17,7 @@ use crate::{
     spider::{
         google_image::image_search_max,
         spanish_dict::{search_vocab, DictionaryDefinition, DictionaryExample},
+        SpiderError,
     },
 };
 
@@ -44,6 +45,19 @@ pub struct VisualFlashCard {
     pub definition: String,
     pub image: Vec<u8>,
     pub example: String,
+}
+
+impl std::fmt::Display for VisualFlashCard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} - {} ({}, {} bytes)",
+            self.word,
+            self.definition,
+            self.example,
+            self.image.len()
+        )
+    }
 }
 
 impl VisualFlashCard {
@@ -83,7 +97,8 @@ impl VisualFlashCard {
     /// | Foto / Media: image     | Foto / Media: image     | Foto / Media: image     |
     /// |-------------------------|-------------------------|-------------------------|
     /// ```
-    pub fn to_tables(vocabs: &[VisualFlashCard]) -> Table {
+    pub fn to_tables(vocabs: &[VisualFlashCard], size: (usize, usize)) -> Table {
+        info!(target: "visual_vocab", "Creating table for {} vocabs", vocabs.len());
         Table::new(vec![
             TableRow::new(
                 vocabs
@@ -112,6 +127,8 @@ impl VisualFlashCard {
                 vocabs
                     .iter()
                     .map(|x| {
+                        let _image_width = size.0 / vocabs.len();
+                        let _image_height = size.1 - super::docx::cm(0.5);
                         TableCell::new().add_paragraph(
                             Paragraph::new().add_run(Run::new().add_image(Pic::new(&x.image))),
                         )
@@ -163,7 +180,7 @@ impl Pipeline for VisualVocabPipeline {
 
         // create visual flashcards
         info!(target: "visual_vocab", "Creating visual flashcards");
-        let vocabs = create_visual_vocabs(words.as_slice())
+        let vocabs = create_visual_vocabs(result.as_slice())
             .await
             .expect("should have created visual flashcards");
 
@@ -186,8 +203,13 @@ impl Pipeline for VisualVocabPipeline {
                     .add_break(BreakType::TextWrapping)
                     .add_text("Escribe la palabra de vocabulario y una frase completa con la palabra. Dibuja una foto que representa la palabra."))
             );
-        for i in 1..*row {
-            let table = VisualFlashCard::to_tables(&vocabs[(i - 1) * col..i * col]);
+        
+        let paper_width = super::docx::cm(21.0);
+        let paper_height = super::docx::cm(29.7);
+
+        for i in 1..=*row {
+            info!(target: "visual_vocab", "Adding row {}", i);
+            let table = VisualFlashCard::to_tables(&vocabs[(i - 1) * col..i * col], (paper_width / col, paper_height / row));
             docx = docx.add_table(table);
         }
 
@@ -205,6 +227,8 @@ impl Pipeline for VisualVocabPipeline {
 
 /// Create visual flashcards
 async fn create_visual_vocabs(vocabs: &[Flashcard]) -> Result<Vec<VisualFlashCard>, &'static str> {
+    info!(target: "visual_vocab", "Creating visual {} flashcards", vocabs.len());
+
     let mut result: Vec<VisualFlashCard> = vec![];
     let mut tasks = vec![];
     for vocab in vocabs.iter() {
@@ -232,14 +256,16 @@ async fn create_visual_vocabs(vocabs: &[Flashcard]) -> Result<Vec<VisualFlashCar
 }
 
 /// Create a visual flashcard
-async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, &'static str> {
+async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, SpiderError> {
+    info!(target: "visual_vocab", "Creating visual flashcard for {}", vocab);
+
     let mut images = image_search_max(&vocab.word, IMAGE_RANDOM_POOL_SIZE)
         .await
-        .expect("should have images");
+        .map_err(|e| SpiderError::new(&format!("Error getting images: {}", e)))?;
 
     let definition = search_vocab(&vocab.word)
         .await
-        .expect("should have found a definition");
+        .map_err(|e| SpiderError::new(&format!("Error searching for definition: {}", e)))?;
 
     let mut image: Vec<u8> = vec![];
     let mut flag = false;
@@ -256,7 +282,7 @@ async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, &'sta
         }
     }
     if !flag {
-        return Err("should have found an image");
+        return Err(SpiderError::new("Could not find an image"));
     }
 
     let examples: Vec<(_, _)> = definition

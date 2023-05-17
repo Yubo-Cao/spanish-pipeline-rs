@@ -1,6 +1,7 @@
 pub mod flashcard;
 pub mod load;
 pub mod visual_vocab;
+mod docx;
 
 use async_trait::async_trait;
 use clipboard::{ClipboardContext, ClipboardProvider};

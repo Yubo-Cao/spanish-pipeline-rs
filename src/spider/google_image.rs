@@ -63,7 +63,7 @@ impl GoogleImage {
 
 /**
 `parse_google_image` accept a json format that is returned by
-parsing json5 from a script element on google image search results page.
+parsing json5 from a sfipt element on google image search results page.
 It parses the json and returns a `GoogleImage` struct.
  */
 fn parse_google_image(x: &serde_json::Value) -> Option<GoogleImage> {

@@ -71,15 +71,12 @@ pub async fn search_vocab(word: &str) -> Result<DictionaryEntry, Box<dyn std::er
 
     let model = _lock.await;
     for _ in 0..2 {
-        match search_vocab_inner(word).await {
-            Ok(entry) => {
-                if entry.definitions.is_empty() {
-                    info!(target: "spanish_dict", "failed to find any definitions for word: {}", word);
-                } else {
-                    return Ok(entry);
-                }
+        if let Ok(entry) = search_vocab_inner(word).await {
+            if entry.definitions.is_empty() {
+                info!(target: "spanish_dict", "failed to find any definitions for word: {}", word);
+            } else {
+                return Ok(entry);
             }
-            Err(_) => {}
         }
     }
     for _ in 0..2 {
@@ -96,16 +93,13 @@ pub async fn search_vocab(word: &str) -> Result<DictionaryEntry, Box<dyn std::er
                     }
                 };
                 info!(target: "spanish_dict", "retry with keyword: {}", keyword);
-                match search_vocab_inner(keyword).await {
-                    Ok(entry) => {
-                        if entry.definitions.is_empty() {
-                            info!(target: "spanish_dict", "failed to find any definitions for word: {}", keyword);
-                        } else {
-                            info!(target: "spanish_dict", "found definitions for word: {}", keyword);
-                            return Ok(entry);
-                        }
+                if let Ok(entry) = search_vocab_inner(keyword).await {
+                    if entry.definitions.is_empty() {
+                        info!(target: "spanish_dict", "failed to find any definitions for word: {}", keyword);
+                    } else {
+                        info!(target: "spanish_dict", "found definitions for word: {}", keyword);
+                        return Ok(entry);
                     }
-                    Err(_) => {}
                 }
             }
             None => {
