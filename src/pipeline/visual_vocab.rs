@@ -216,7 +216,7 @@ impl Pipeline for VisualVocabPipeline {
 
         let paper_width = super::docx::cm(21.0);
         let paper_height = super::docx::cm(29.7);
-        
+
         // create tables
         let handles = vocabs.chunks(col as usize).enumerate().map(|(i, vocabs)| {
             info!(target: "visual_vocab", "Creating row {}", i);
@@ -252,11 +252,9 @@ impl Pipeline for VisualVocabPipeline {
 async fn create_visual_vocabs(vocabs: &[Flashcard]) -> Result<Vec<VisualFlashCard>, &'static str> {
     info!(target: "visual_vocab", "Creating visual {} flashcards", vocabs.len());
 
-    let mut result: Vec<VisualFlashCard> = vec![];
-    let mut tasks = vec![];
-    for vocab in vocabs.iter() {
+    let tasks = vocabs.iter().map(|vocab| {
         let vocab = vocab.clone();
-        let task = tokio::spawn(async move {
+        tokio::spawn(async move {
             match create_visual_vocab(&vocab).await {
                 Ok(vocab) => vocab,
                 Err(err) => {
@@ -264,17 +262,13 @@ async fn create_visual_vocabs(vocabs: &[Flashcard]) -> Result<Vec<VisualFlashCar
                     VisualFlashCard::default()
                 }
             }
-        });
-        tasks.push(task);
-    }
-    for task in tasks {
-        match task.await {
-            Ok(vocab) => result.push(vocab),
-            Err(err) => {
-                error!(target: "visual_vocab", "Error creating visual flashcard: {}", err);
-            }
-        }
-    }
+        })
+    });
+    let result = futures::future::join_all(tasks)
+        .await
+        .into_iter()
+        .filter_map(|res| res.ok())
+        .collect();
     Ok(result)
 }
 
