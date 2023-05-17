@@ -142,7 +142,7 @@ fn textify_row(row: &docx_rs::TableRow) -> String {
         + row
             .cells
             .iter()
-            .map(|x| textify_cell(x))
+            .map(textify_cell)
             .collect::<Vec<_>>()
             .join(" | ")
             .trim()
@@ -179,7 +179,7 @@ fn textify_paragraph(paragraph: &docx_rs::Paragraph) -> String {
         .collect::<String>()
 }
 
-fn textify_run(run: &Box<docx_rs::Run>) -> String {
+fn textify_run(run: &docx_rs::Run) -> String {
     run.children
         .iter()
         .map(|x| {

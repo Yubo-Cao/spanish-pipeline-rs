@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use clap::Parser;
 use docx_rs::*;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use log::{error, info};
 use rand::random;
 use rust_bert::pipelines::sentence_embeddings::{
@@ -298,13 +298,13 @@ async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, &'sta
     })
 }
 
-lazy_static! {
-    static ref MODEL: Mutex<SentenceEmbeddingsModel> = Mutex::new(
+static MODEL: Lazy<Mutex<SentenceEmbeddingsModel>> = Lazy::new(|| {
+    Mutex::new(
         SentenceEmbeddingsBuilder::remote(SentenceEmbeddingsModelType::AllMiniLmL12V2)
             .create_model()
-            .expect("should have created a model")
-    );
-}
+            .expect("should have created a model"),
+    )
+});
 
 /// Search for a query in a list of strings
 /// - `query` is the string to search for
