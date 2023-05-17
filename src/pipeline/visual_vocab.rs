@@ -73,66 +73,60 @@ impl VisualFlashCard {
     /// | Foto / Media: at image     | Foto / Media: image     | Foto / Media: image     |
     /// |-------------------------|-------------------------|-------------------------|
     /// ```
-    async fn to_tables(
+    ///
+    /// Size should be specified as (width, height) in emu
+    async fn to_table(
         vocabs: Vec<VisualFlashCard>,
         size: (u32, u32),
     ) -> Result<Table, Box<dyn std::error::Error>> {
-        info!(target: "visual_vocab", "Creating table for {} vocabs", vocabs.len());
+        info!(target: "visual_vocab", "Creating table for {} vocabs with size {:?}", vocabs.len(), size);
         let mut images = Vec::new();
 
         for vocab in &vocabs {
-            let trgt_w_emu = size.0 / vocabs.len() as u32;
-            let trgt_h_emu = size.1 - super::docx::cm(0.5);
-
+            let (t_w_emu, t_h_emu) = (size.0 / vocabs.len() as u32, size.1 - super::docx::cm(0.5));
             let (w_emu, h_emu) = Pic::new(&vocab.get_image_buf()?).size;
+            let ratio = (|a, b| if a < b { a } else { b })(
+                t_w_emu as f32 / w_emu as f32,
+                t_h_emu as f32 / h_emu as f32,
+            );
+            let (f_w_emu, f_h_emu) = ((w_emu as f32 * ratio) as u32, (h_emu as f32 * ratio) as u32);
+            let (w_px, h_px) = vocab.image.dimensions();
+            let (f_w_px, f_h_px) = ((h_px as f32 * ratio) as u32, (w_px as f32 * ratio) as u32);
 
+            info!(target: "visual_vocab", "Resizing image from {}x{} to {}x{}", w_px, h_px, f_w_px, f_h_px);
             let mut buffer = Cursor::new(Vec::new());
-
-            let (width, height) = vocab.image.dimensions();
-
-            let min = |a, b| if a < b { a } else { b };
-
-            let ratio = min(
-                trgt_w_emu as f32 / w_emu as f32,
-                trgt_h_emu as f32 / h_emu as f32,
-            );
-
-            let final_width = (width as f32 * ratio) as u32;
-            let final_height = (height as f32 * ratio) as u32;
-            info!(target: "visual_vocab", "Resizing image from {}x{} to {}x{}", width, height, final_width, final_height);
-            let resized = vocab.image.resize_exact(
-                final_width,
-                final_height,
-                image::imageops::FilterType::Lanczos3,
-            );
+            let resized =
+                vocab
+                    .image
+                    .resize_exact(f_w_px, f_h_px, image::imageops::FilterType::Lanczos3);
             resized.write_to(&mut buffer, image::ImageOutputFormat::Png)?;
+
+            info!(target: "visual_vocab", "Adding image ({}, {})", f_w_emu, f_h_emu);
             images.push(TableCell::new().add_paragraph(Paragraph::new().add_run(
-                Run::new().add_image(Pic::new(&buffer.into_inner()).size(trgt_w_emu, trgt_h_emu)),
+                Run::new().add_image(Pic::new(&buffer.into_inner()).size(f_w_emu, f_h_emu)),
             )))
         }
+
+        let cellify = |x: String| {
+            let mut cell =
+                TableCell::new().add_paragraph(Paragraph::new().add_run(Run::new().add_text(x)));
+            cell.property = cell
+                .property
+                .width(size.0 as usize / vocabs.len() / 12_700 * 12, WidthType::Dxa);
+            cell
+        };
 
         Ok(Table::new(vec![
             TableRow::new(
                 vocabs
                     .iter()
-                    .map(|x| {
-                        TableCell::new().add_paragraph(
-                            Paragraph::new()
-                                .add_run(Run::new().add_text(format!("Vocabulario: {}", x.word))),
-                        )
-                    })
+                    .map(|x| cellify(format!("Vocabulario: {}", x.word)))
                     .collect(),
             ),
             TableRow::new(
                 vocabs
                     .iter()
-                    .map(|x| {
-                        TableCell::new().add_paragraph(
-                            Paragraph::new().add_run(
-                                Run::new().add_text(format!("Frase Completa: {}", x.example)),
-                            ),
-                        )
-                    })
+                    .map(|x| cellify(format!("Frase Completa: {}", x.example)))
                     .collect(),
             ),
             TableRow::new(images),
@@ -214,6 +208,7 @@ impl Pipeline for VisualVocabPipeline {
                     .add_text("Escribe la palabra de vocabulario y una frase completa con la palabra. Dibuja una foto que representa la palabra."))
             );
 
+        // a4paper
         let paper_width = super::docx::cm(21.0);
         let paper_height = super::docx::cm(29.7);
 
@@ -222,7 +217,7 @@ impl Pipeline for VisualVocabPipeline {
             info!(target: "visual_vocab", "Creating row {}", i);
             let vocabs = vocabs.to_owned();
             tokio::spawn(async move {
-                VisualFlashCard::to_tables(vocabs, (paper_width / col, paper_height / row))
+                VisualFlashCard::to_table(vocabs, (paper_width, paper_height / 3))
                     .await
                     .map_err(|err| format!("Error creating visual flashcard: {}", err))
             })
