@@ -41,6 +41,7 @@ pub struct VisualVocabPipeline {
 }
 
 /// A representation of the results created by VisualVocabPipeline
+#[derive(Debug, Clone)]
 pub struct VisualFlashCard {
     pub word: String,
     pub definition: String,
@@ -72,14 +73,14 @@ impl VisualFlashCard {
     /// | Foto / Media: at image     | Foto / Media: image     | Foto / Media: image     |
     /// |-------------------------|-------------------------|-------------------------|
     /// ```
-    fn to_tables(
-        vocabs: &[VisualFlashCard],
+    async fn to_tables(
+        vocabs: Vec<VisualFlashCard>,
         size: (u32, u32),
     ) -> Result<Table, Box<dyn std::error::Error>> {
         info!(target: "visual_vocab", "Creating table for {} vocabs", vocabs.len());
         let mut images = Vec::new();
 
-        for vocab in vocabs {
+        for vocab in &vocabs {
             let trgt_w_emu = size.0 / vocabs.len() as u32;
             let trgt_h_emu = size.1 - super::docx::cm(0.5);
 
@@ -106,9 +107,7 @@ impl VisualFlashCard {
             );
             resized.write_to(&mut buffer, image::ImageOutputFormat::Png)?;
             images.push(TableCell::new().add_paragraph(Paragraph::new().add_run(
-                Run::new().add_image(
-                    Pic::new(&buffer.into_inner()).size(trgt_w_emu, trgt_h_emu),
-                ),
+                Run::new().add_image(Pic::new(&buffer.into_inner()).size(trgt_w_emu, trgt_h_emu)),
             )))
         }
 
@@ -173,6 +172,8 @@ impl Pipeline for VisualVocabPipeline {
             filename,
         } = self;
 
+        let col = *col;
+        let row = *row;
         let flashcard = match input {
             Some(PipelineIO::Flashcard(vocab)) => vocab,
             _ => return Err(CliError::new("No flashcard input").into()),
@@ -215,14 +216,24 @@ impl Pipeline for VisualVocabPipeline {
 
         let paper_width = super::docx::cm(21.0);
         let paper_height = super::docx::cm(29.7);
-
-        for i in 1..=*row {
-            info!(target: "visual_vocab", "Adding row {}", i);
-            let table = VisualFlashCard::to_tables(
-                &vocabs[((i - 1) * col) as usize..(i * col) as usize],
-                (paper_width / col, paper_height / row),
-            )?;
-            docx = docx.add_table(table);
+        
+        // create tables
+        let handles = vocabs.chunks(col as usize).enumerate().map(|(i, vocabs)| {
+            info!(target: "visual_vocab", "Creating row {}", i);
+            let vocabs = vocabs.to_owned();
+            tokio::spawn(async move {
+                VisualFlashCard::to_tables(vocabs, (paper_width / col, paper_height / row))
+                    .await
+                    .map_err(|err| format!("Error creating visual flashcard: {}", err))
+            })
+        });
+        let mut tables = futures::future::join_all(handles).await;
+        for table in tables.drain(..) {
+            info!(target: "visual_vocab", "Adding table");
+            let table = table??;
+            docx = docx
+                .add_table(table)
+                .add_paragraph(Paragraph::new().add_run(Run::new().add_text("")));
         }
 
         // save document
