@@ -84,7 +84,7 @@ impl VisualFlashCard {
         for vocab in &vocabs {
             let (t_w_emu, t_h_emu) = (size.0 / vocabs.len() as u32, size.1 - super::docx::cm(0.5));
             let (w_emu, h_emu) = Pic::new(&vocab.get_image_buf()?).size;
-            let ratio = (|a, b| if a < b { a } else { b })(
+            let ratio = f32::min(
                 t_w_emu as f32 / w_emu as f32,
                 t_h_emu as f32 / h_emu as f32,
             );
@@ -243,7 +243,7 @@ impl Pipeline for VisualVocabPipeline {
 }
 
 /// Create visual flashcards
-async fn create_visual_vocabs(vocabs: &[Flashcard]) -> Result<Vec<VisualFlashCard>, &'static str> {
+async fn create_visual_vocabs(vocabs: &[Flashcard]) -> Result<Vec<VisualFlashCard>, PipelineError> {
     info!(target: "visual_vocab", "Creating visual {} flashcards", vocabs.len());
 
     let tasks = vocabs.iter().map(|vocab| {
