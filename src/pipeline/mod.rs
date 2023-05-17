@@ -16,14 +16,14 @@ pub enum PipelineIO {
 
 impl PipelineIO {
     /// Dump the output to the specified path.
-    pub fn dump(&self, name: &str) -> Result<(), &'static str> {
+    pub fn dump(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         let out_dir = format!("./out/{}", name);
-        std::fs::create_dir_all(&out_dir).map_err(|_| "Failed to create output directory")?;
+        std::fs::create_dir_all(&out_dir)?;
 
         match self {
             PipelineIO::Document { name, content } => {
                 let path = format!("{}/{}", out_dir, name);
-                std::fs::write(path, content).map_err(|_| "Failed to write document to file")?;
+                std::fs::write(path, content)?;
             }
             PipelineIO::Clipboard(info) => {
                 let mut clipboard: ClipboardContext = clipboard::ClipboardProvider::new().unwrap();
@@ -37,10 +37,8 @@ impl PipelineIO {
             }
             PipelineIO::Flashcard(flashcards) => {
                 let path = format!("{}/flashcard.yml", out_dir);
-                let serialized = serde_yaml::to_string(flashcards)
-                    .map_err(|_| "Failed to serialize flashcards")?;
-                std::fs::write(path, serialized)
-                    .map_err(|_| "Failed to write flashcards to file")?;
+                let serialized = serde_yaml::to_string(flashcards)?;
+                std::fs::write(path, serialized)?;
             }
         }
         Ok(())

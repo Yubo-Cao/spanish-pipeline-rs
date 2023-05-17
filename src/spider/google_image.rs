@@ -5,7 +5,7 @@ use once_cell::sync::Lazy;
 use scraper::{Html, Selector};
 use url::form_urlencoded;
 
-use super::CLIENT;
+use super::{SpiderError, CLIENT};
 
 /// Represents an image
 #[derive(Debug)]
@@ -37,19 +37,22 @@ impl fmt::Display for GoogleImage {
 
 impl Image {
     /// Get the bytes of an image
-    pub async fn get_bytes(image: &GoogleImage) -> Result<Vec<u8>, &'static str> {
+    pub async fn get_bytes(image: &GoogleImage) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         if let Ok(resp) = CLIENT.get(&image.full.src).send().await {
             if let Ok(bytes) = resp.bytes().await {
                 return Ok(bytes.to_vec());
             }
         }
-        Err("should have received bytes")
+        Err(Box::new(SpiderError::new(&format!(
+            "failed to get bytes for image: {}",
+            image
+        ))))
     }
 }
 
 impl GoogleImage {
     /// Get the bytes of an image
-    pub async fn get_bytes(&self) -> Result<Vec<u8>, &'static str> {
+    pub async fn get_bytes(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         Image::get_bytes(self).await
     }
 }
@@ -115,7 +118,10 @@ fn parse_google_image(x: &serde_json::Value) -> Option<GoogleImage> {
 /**
 `image_search` searches for images on google and returns up to 100 images.
  */
-pub async fn image_search(query: &str, offset: u32) -> Result<Vec<GoogleImage>, &'static str> {
+pub async fn image_search(
+    query: &str,
+    offset: u32,
+) -> Result<Vec<GoogleImage>, Box<dyn std::error::Error>> {
     for _ in 0..5 {
         let params = form_urlencoded::Serializer::new(String::new())
             .append_pair("tbm", "isch")
@@ -158,13 +164,19 @@ pub async fn image_search(query: &str, offset: u32) -> Result<Vec<GoogleImage>, 
             return Ok(images);
         }
     }
-    Err("no images found")
+    Err(Box::new(SpiderError::new(&format!(
+        "failed to get images for query: {}",
+        query
+    ))))?
 }
 
 /**
 `image_search_max` searches for images on google and returns up to `max` images.
  */
-pub async fn image_search_max(query: &str, max: u32) -> Result<Vec<GoogleImage>, &'static str> {
+pub async fn image_search_max(
+    query: &str,
+    max: u32,
+) -> Result<Vec<GoogleImage>, Box<dyn std::error::Error>> {
     let mut images = Vec::new();
     let mut offset = 0;
     while offset < max {

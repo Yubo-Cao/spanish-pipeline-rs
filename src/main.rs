@@ -6,9 +6,9 @@ pub mod spider;
 
 use clap::Parser;
 use error::CliError;
+use fern::colors::{Color, ColoredLevelConfig};
 use log::info;
 use pipeline::Pipeline;
-use simple_logger::SimpleLogger;
 
 const PIPELINES: [&str; 2] = ["load", "visual_vocab"];
 
@@ -64,9 +64,25 @@ fn parse_arguments() -> Result<Cli, Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    log::set_boxed_logger(Box::new(SimpleLogger::new()))
-        .map(|()| log::set_max_level(log::LevelFilter::Info))?;
-    info!(target: "main", "starting");
+    let colors = ColoredLevelConfig::new()
+        .info(Color::Green)
+        .warn(Color::Yellow)
+        .error(Color::Magenta);
+    fern::Dispatch::new()
+        .format(move |out, message, record| {
+            out.finish(format_args!(
+                "[{}] [{}] {}",
+                record.target(),
+                colors.color(record.level()),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Info)
+        .level_for("cached_path", log::LevelFilter::Error)
+        .chain(std::io::stdout())
+        .apply()
+        .unwrap();
+    info!(target: "main", "logger initialized");
 
     let Cli { name, pipelines } = match parse_arguments() {
         Ok(cli) => cli,

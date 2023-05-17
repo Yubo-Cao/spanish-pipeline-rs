@@ -19,3 +19,26 @@ pub static CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
         .build()
         .expect("should be able to create client")
 });
+
+/// Spider error
+#[derive(Debug)]
+pub struct SpiderError {
+    message: String,
+}
+
+impl SpiderError {
+    /// Create a new spider error
+    pub fn new(message: &str) -> Self {
+        Self {
+            message: message.to_string(),
+        }
+    }
+}
+
+impl std::fmt::Display for SpiderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:#?}", self.message)
+    }
+}
+
+impl std::error::Error for SpiderError {}

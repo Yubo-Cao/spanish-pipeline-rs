@@ -159,6 +159,7 @@ impl Pipeline for VisualVocabPipeline {
             let word = words.remove(random::<usize>() % words.len());
             result.push(word);
         }
+        info!(target: "visual_vocab", "Picked {} words", result.len());
 
         // create visual flashcards
         info!(target: "visual_vocab", "Creating visual flashcards");
@@ -220,7 +221,12 @@ async fn create_visual_vocabs(vocabs: &[Flashcard]) -> Result<Vec<VisualFlashCar
         tasks.push(task);
     }
     for task in tasks {
-        result.push(task.await.expect("should have awaited task"));
+        match task.await {
+            Ok(vocab) => result.push(vocab),
+            Err(err) => {
+                error!(target: "visual_vocab", "Error creating visual flashcard: {}", err);
+            }
+        }
     }
     Ok(result)
 }
@@ -317,6 +323,7 @@ async fn deep_search(
     let model = MODEL
         .get_or_init(|| async {
             task::spawn_blocking(move || {
+                info!(target: "deep_search", "Loading model");
                 Mutex::new(
                     SentenceEmbeddingsBuilder::remote(SentenceEmbeddingsModelType::AllMiniLmL12V2)
                         .create_model()
