@@ -79,6 +79,7 @@ fn parse_arguments() -> Result<Cli, Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // parse the cli arguments
     let Cli {
         name,
         level,
@@ -96,6 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .warn(Color::Yellow)
         .error(Color::Magenta);
     let mut dispatch = fern::Dispatch::new().format(move |out, message, record| {
+        // if terminal
         out.finish(format_args!(
             "[{}] [{}] {}",
             record.target(),
@@ -115,6 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .apply()?;
     info!(target: "main", "logger initialized");
 
+    // run the pipelines
     let mut input = None;
     for pipeline in pipelines {
         info!(target: "main", "running pipeline: {}", pipeline.name());
@@ -123,6 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     info!(target: "main", "finished");
 
+    // dump the output
     if let Some(output) = input {
         output.dump(&name)?;
         info!(target: "main", "dumped output");
