@@ -127,11 +127,13 @@ impl VisualFlashCard {
                 vocabs
                     .iter()
                     .map(|x| {
-                        let _image_width = size.0 / vocabs.len();
-                        let _image_height = size.1 - super::docx::cm(0.5);
-                        TableCell::new().add_paragraph(
-                            Paragraph::new().add_run(Run::new().add_image(Pic::new(&x.image))),
-                        )
+                        let image_width = size.0 / vocabs.len();
+                        let image_height = size.1 - super::docx::cm(0.5);
+                        TableCell::new().add_paragraph(Paragraph::new().add_run(
+                            Run::new().add_image(
+                                Pic::new(&x.image).size(image_width as u32, image_height as u32),
+                            ),
+                        ))
                     })
                     .collect(),
             ),
@@ -203,13 +205,16 @@ impl Pipeline for VisualVocabPipeline {
                     .add_break(BreakType::TextWrapping)
                     .add_text("Escribe la palabra de vocabulario y una frase completa con la palabra. Dibuja una foto que representa la palabra."))
             );
-        
+
         let paper_width = super::docx::cm(21.0);
         let paper_height = super::docx::cm(29.7);
 
         for i in 1..=*row {
             info!(target: "visual_vocab", "Adding row {}", i);
-            let table = VisualFlashCard::to_tables(&vocabs[(i - 1) * col..i * col], (paper_width / col, paper_height / row));
+            let table = VisualFlashCard::to_tables(
+                &vocabs[(i - 1) * col..i * col],
+                (paper_width / col, paper_height / row),
+            );
             docx = docx.add_table(table);
         }
 
@@ -324,12 +329,14 @@ async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, Spide
     let rank = deep_search(&vocab.word, &definition, 1, 0.0).await;
     let example = examples[rank[0].0].1.to_owned();
 
-    Ok(VisualFlashCard {
+    let visual_flash_card = VisualFlashCard {
         word: vocab.word.to_owned(),
         definition: vocab.definition.to_owned(),
         image,
         example,
-    })
+    };
+    info!(target: "visual_vocab", "Created visual flashcard {}", visual_flash_card);
+    Ok(visual_flash_card)
 }
 
 static SENTENCE_EMBEDDER: OnceCell<Mutex<SentenceEmbeddingsModel>> = OnceCell::const_new();
