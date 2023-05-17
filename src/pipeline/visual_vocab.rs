@@ -3,6 +3,7 @@ use std::io::Cursor;
 use async_trait::async_trait;
 use clap::Parser;
 use docx_rs::*;
+use image::{DynamicImage, GenericImageView};
 use log::{debug, error, info};
 use rand::random;
 use rust_bert::pipelines::sentence_embeddings::{
@@ -26,10 +27,10 @@ use crate::{
 pub struct VisualVocabPipeline {
     /// The number of rows
     #[clap(short, long, default_value = "3")]
-    row: usize,
+    row: u32,
     /// The number of columns
     #[clap(short, long, default_value = "6")]
-    col: usize,
+    col: u32,
     /// The name of the output file
     #[clap(short, long, default_value = "visual_vocab.docx")]
     filename: String,
@@ -43,7 +44,7 @@ pub struct VisualVocabPipeline {
 pub struct VisualFlashCard {
     pub word: String,
     pub definition: String,
-    pub image: Vec<u8>,
+    pub image: DynamicImage,
     pub example: String,
 }
 
@@ -55,38 +56,12 @@ impl std::fmt::Display for VisualFlashCard {
             self.word,
             self.definition,
             self.example,
-            self.image.len()
+            self.image.dimensions().0 * self.image.dimensions().1 * 3
         )
     }
 }
 
 impl VisualFlashCard {
-    /// Return a table with the visual flashcard
-    /// ```md
-    /// |-------------------------|
-    /// | Vocabulario: word       |
-    /// |-------------------------|
-    /// | Frase Completa: example |
-    /// |-------------------------|
-    /// | Foto / Media: image     |
-    /// |-------------------------|
-    /// ```
-    pub fn to_table(&self) -> Table {
-        Table::new(vec![
-            TableRow::new(vec![TableCell::new()
-                .add_paragraph(Paragraph::new().add_run(
-                    Run::new().add_text(format!("Vocabulario: {}", self.word)),
-                ))]),
-            TableRow::new(vec![TableCell::new()
-                .add_paragraph(Paragraph::new().add_run(
-                    Run::new().add_text(format!("Frase Completa: {}", self.example)),
-                ))]),
-            TableRow::new(vec![TableCell::new().add_paragraph(
-                Paragraph::new().add_run(Run::new().add_image(Pic::new(&self.image))),
-            )]),
-        ])
-    }
-
     /// Return a table with the visual flashcards
     /// ```md
     /// |-------------------------|-------------------------|-------------------------|
@@ -94,12 +69,50 @@ impl VisualFlashCard {
     /// |-------------------------|-------------------------|-------------------------|
     /// | Frase Completa: example | Frase Completa: example | Frase Completa: example |
     /// |-------------------------|-------------------------|-------------------------|
-    /// | Foto / Media: image     | Foto / Media: image     | Foto / Media: image     |
+    /// | Foto / Media: at image     | Foto / Media: image     | Foto / Media: image     |
     /// |-------------------------|-------------------------|-------------------------|
     /// ```
-    pub fn to_tables(vocabs: &[VisualFlashCard], size: (usize, usize)) -> Table {
+    fn to_tables(
+        vocabs: &[VisualFlashCard],
+        size: (u32, u32),
+    ) -> Result<Table, Box<dyn std::error::Error>> {
         info!(target: "visual_vocab", "Creating table for {} vocabs", vocabs.len());
-        Table::new(vec![
+        let mut images = Vec::new();
+
+        for vocab in vocabs {
+            let trgt_w_emu = size.0 / vocabs.len() as u32;
+            let trgt_h_emu = size.1 - super::docx::cm(0.5);
+
+            let (w_emu, h_emu) = Pic::new(&vocab.get_image_buf()?).size;
+
+            let mut buffer = Cursor::new(Vec::new());
+
+            let (width, height) = vocab.image.dimensions();
+
+            let min = |a, b| if a < b { a } else { b };
+
+            let ratio = min(
+                trgt_w_emu as f32 / w_emu as f32,
+                trgt_h_emu as f32 / h_emu as f32,
+            );
+
+            let final_width = (width as f32 * ratio) as u32;
+            let final_height = (height as f32 * ratio) as u32;
+            info!(target: "visual_vocab", "Resizing image from {}x{} to {}x{}", width, height, final_width, final_height);
+            let resized = vocab.image.resize_exact(
+                final_width,
+                final_height,
+                image::imageops::FilterType::Lanczos3,
+            );
+            resized.write_to(&mut buffer, image::ImageOutputFormat::Png)?;
+            images.push(TableCell::new().add_paragraph(Paragraph::new().add_run(
+                Run::new().add_image(
+                    Pic::new(&buffer.into_inner()).size(trgt_w_emu, trgt_h_emu),
+                ),
+            )))
+        }
+
+        Ok(Table::new(vec![
             TableRow::new(
                 vocabs
                     .iter()
@@ -123,41 +136,24 @@ impl VisualFlashCard {
                     })
                     .collect(),
             ),
-            TableRow::new(
-                vocabs
-                    .iter()
-                    .map(|x| {
-                        let target_width = size.0 / vocabs.len();
-                        let target_height = size.1 - super::docx::cm(0.5);
-                        let pic = Pic::new(&x.image);
-                        let (width, height) = pic.size;
-                        let min = |a, b| if a < b { a } else { b };
-                        let ratio = min(
-                            target_width as f32 / width as f32,
-                            target_height as f32 / height as f32,
-                        );
-                        let final_width = (width as f32 * ratio) as u32;
-                        let final_height = (height as f32 * ratio) as u32;
-
-                        TableCell::new().add_paragraph(
-                            Paragraph::new().add_run(
-                                Run::new()
-                                    .add_image(Pic::new(&x.image).size(final_width, final_height)),
-                            ),
-                        )
-                    })
-                    .collect(),
-            ),
-        ])
+            TableRow::new(images),
+        ]))
     }
 
     fn default() -> Self {
         Self {
             word: String::new(),
             definition: String::new(),
-            image: vec![],
+            image: DynamicImage::new_rgb8(1, 1),
             example: String::new(),
         }
+    }
+
+    fn get_image_buf(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let mut buf = Cursor::new(Vec::new());
+        self.image
+            .write_to(&mut buf, image::ImageOutputFormat::Png)?;
+        Ok(buf.into_inner())
     }
 }
 
@@ -223,9 +219,9 @@ impl Pipeline for VisualVocabPipeline {
         for i in 1..=*row {
             info!(target: "visual_vocab", "Adding row {}", i);
             let table = VisualFlashCard::to_tables(
-                &vocabs[(i - 1) * col..i * col],
+                &vocabs[((i - 1) * col) as usize..(i * col) as usize],
                 (paper_width / col, paper_height / row),
-            );
+            )?;
             docx = docx.add_table(table);
         }
 
@@ -283,23 +279,24 @@ async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, Spide
         .await
         .map_err(|e| SpiderError::new(&format!("Error searching for definition: {}", e)))?;
 
-    let mut image: Vec<u8> = vec![];
-    let mut flag = false;
-    while !images.is_empty() && !flag {
+    let image = loop {
         let img = images.remove(random::<usize>() % images.len());
-        match img.get_bytes().await {
-            Ok(buf) => {
-                image = buf;
-                flag = true;
+        match img.full.get_image().await {
+            Ok(img) => {
+                break Some(img);
             }
             Err(err) => {
                 error!(target: "visual_vocab", "Error getting image bytes: {}", err);
             }
         }
-    }
-    if !flag {
-        return Err(SpiderError::new("Could not find an image"));
-    }
+    };
+    let image = match image {
+        Some(img) => img,
+        None => {
+            return Err(SpiderError::new("No image found"));
+        }
+    };
+    info!(target: "visual_vocab", "Got image for {}", vocab);
 
     let examples: Vec<(_, _)> = definition
         .definitions

@@ -1,5 +1,6 @@
 use core::fmt;
 
+use image::DynamicImage;
 use log::{debug, warn};
 use once_cell::sync::Lazy;
 use scraper::{Html, Selector};
@@ -37,27 +38,23 @@ impl fmt::Display for GoogleImage {
 
 impl Image {
     /// Get the bytes of an image
-    pub async fn get_bytes(image: &GoogleImage) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        let resp = CLIENT.get(&image.full.src).send().await.map_err(|e| {
+    pub async fn get_image(&self) -> Result<DynamicImage, Box<dyn std::error::Error>> {
+        let resp = CLIENT.get(&self.src).send().await.map_err(|e| {
             SpiderError::new(&format!(
-                "failed to get bytes for image: {} because\n{}",
-                image, e
+                "failed to send response for image: {} because\n{}",
+                self, e
             ))
         })?;
         let bytes = resp.bytes().await.map_err(|e| {
             SpiderError::new(&format!(
                 "failed to get bytes for image: {} because\n{}",
-                image, e
+                self, e
             ))
         })?;
-        Ok(bytes.to_vec())
-    }
-}
-
-impl GoogleImage {
-    /// Get the bytes of an image
-    pub async fn get_bytes(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        Image::get_bytes(self).await
+        let image = image::load_from_memory(&bytes).map_err(|e| {
+            SpiderError::new(&format!("failed to parse image: {} because\n{}", self, e))
+        })?;
+        Ok(image)
     }
 }
 
