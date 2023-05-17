@@ -40,3 +40,9 @@ impl<'de> Deserialize<'de> for Flashcard {
         Ok(Flashcard { word, definition })
     }
 }
+
+impl std::fmt::Display for Flashcard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.word, self.definition)
+    }
+}
