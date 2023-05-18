@@ -5,7 +5,6 @@ pub mod pipeline;
 pub mod spider;
 
 use clap::Parser;
-use error::CliError;
 use fern::colors::{Color, ColoredLevelConfig};
 use log::info;
 use pipeline::Pipeline;
@@ -19,7 +18,8 @@ struct Cli {
     name: String,
 
     /// The log level.
-    level: Option<log::LevelFilter>,
+    #[clap(short, long, default_value = "info")]
+    level: log::LevelFilter,
 
     /// Quiet mode.
     #[clap(short, long)]
@@ -45,7 +45,7 @@ impl std::fmt::Debug for Cli {
 
 /// Parses the command line arguments and returns the corresponding pipelines.
 #[allow(unused_assignments)]
-fn parse_arguments() -> Result<Cli, Box<dyn std::error::Error>> {
+fn parse_arguments() -> Cli {
     let args = std::env::args().collect::<Vec<String>>();
     let mut pipelines = Vec::new();
     let mut i = 1;
@@ -62,26 +62,23 @@ fn parse_arguments() -> Result<Cli, Box<dyn std::error::Error>> {
     while i < args.len() {
         let pipeline = &args[i];
         if !PIPELINES.contains(&pipeline.as_str()) {
-            return Err(CliError::new(&format!(
-                "Invalid pipeline: {}",
-                pipeline
-            ))
-            .into());
+            Cli::parse_from(&["", "--help"]);
+            unreachable!("should have printed help");
         }
         let start = i;
         i += 1;
         while i < args.len() && !PIPELINES.contains(&args[i].as_str()) {
             i += 1;
         }
-        let args = [&["".to_string()], &args[start..i]].concat();
+        let args = &args[start..i];
 
         let result: Box<dyn Pipeline> = match pipeline.as_str() {
-            "load" => Box::new(pipeline::load::LoadPipeline::parse_from(&args)),
+            "load" => Box::new(pipeline::load::LoadPipeline::parse_from(args)),
             "visual_vocab" => Box::new(
-                pipeline::visual_vocab::VisualVocabPipeline::parse_from(&args),
+                pipeline::visual_vocab::VisualVocabPipeline::parse_from(args),
             ),
             "transform" => Box::new(
-                pipeline::transform::TransformPipeline::parse_from(&args),
+                pipeline::transform::TransformPipeline::parse_from(args),
             ),
             _ => unreachable!(),
         };
@@ -89,11 +86,11 @@ fn parse_arguments() -> Result<Cli, Box<dyn std::error::Error>> {
         pipelines.push(result);
     }
     if pipelines.is_empty() {
-        return Err(CliError::new("No pipeline specified").into());
+        Cli::parse_from(&["", "--help"]);
+        unreachable!("should have printed help");
     }
     cli.pipelines = pipelines;
-
-    Ok(cli)
+    cli
 }
 
 #[tokio::main]
@@ -104,13 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         level,
         pipelines,
         quiet,
-    } = match parse_arguments() {
-        Ok(cli) => cli,
-        Err(err) => {
-            println!("{}", err);
-            return Ok(());
-        }
-    };
+    } = parse_arguments();
     let colors = ColoredLevelConfig::new()
         .info(Color::Green)
         .warn(Color::Yellow)
@@ -125,13 +116,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 message
             ))
         });
-    if let Some(level) = level {
-        dispatch = dispatch.level(level);
-    }
     dispatch = match quiet {
         true => dispatch.level(log::LevelFilter::Off),
         false => dispatch
-            .level(log::LevelFilter::Info)
+            .level(level)
             .chain(
                 fern::Dispatch::new()
                     .level(log::LevelFilter::Warn)

@@ -14,7 +14,7 @@ lto = true
 
 [dependencies]
 async-trait = "0.1.68"
-clap = { version = "4.2.7", features = ["derive"] }
+clap = { version = "4.2.7", features = ["derive", "error-context"] }
 clipboard = "0.5.0"
 docx-rs = "0.4.6"
 ego-tree = "0.6.2"
