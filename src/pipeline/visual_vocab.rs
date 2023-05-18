@@ -7,10 +7,13 @@ use image::{DynamicImage, GenericImageView};
 use log::{debug, error, info};
 use rand::random;
 use rust_bert::pipelines::sentence_embeddings::{
-    builder::SentenceEmbeddingsBuilder, SentenceEmbeddingsModel, SentenceEmbeddingsModelType,
+    builder::SentenceEmbeddingsBuilder, SentenceEmbeddingsModel,
+    SentenceEmbeddingsModelType,
 };
-use tokio::sync::{Mutex, OnceCell};
-use tokio::task;
+use tokio::{
+    sync::{Mutex, OnceCell},
+    task,
+};
 
 use super::{Flashcard, Pipeline, PipelineError, PipelineIO};
 use crate::{
@@ -82,36 +85,44 @@ impl VisualFlashCard {
         let mut images = Vec::new();
 
         for vocab in &vocabs {
-            let (t_w_emu, t_h_emu) = (size.0 / vocabs.len() as u32, size.1 - super::docx::cm(0.5));
+            let (t_w_emu, t_h_emu) =
+                (size.0 / vocabs.len() as u32, size.1 - super::docx::cm(0.5));
             let (w_emu, h_emu) = Pic::new(&vocab.get_image_buf()?).size;
             let ratio = f32::min(
                 t_w_emu as f32 / w_emu as f32,
                 t_h_emu as f32 / h_emu as f32,
             );
-            let (f_w_emu, f_h_emu) = ((w_emu as f32 * ratio) as u32, (h_emu as f32 * ratio) as u32);
+            let (f_w_emu, f_h_emu) =
+                ((w_emu as f32 * ratio) as u32, (h_emu as f32 * ratio) as u32);
             let (w_px, h_px) = vocab.image.dimensions();
-            let (f_w_px, f_h_px) = ((h_px as f32 * ratio) as u32, (w_px as f32 * ratio) as u32);
+            let (f_w_px, f_h_px) =
+                ((h_px as f32 * ratio) as u32, (w_px as f32 * ratio) as u32);
 
             info!(target: "visual_vocab", "Resizing image from {}x{} to {}x{}", w_px, h_px, f_w_px, f_h_px);
             let mut buffer = Cursor::new(Vec::new());
-            let resized =
-                vocab
-                    .image
-                    .resize_exact(f_w_px, f_h_px, image::imageops::FilterType::Lanczos3);
+            let resized = vocab.image.resize_exact(
+                f_w_px,
+                f_h_px,
+                image::imageops::FilterType::Lanczos3,
+            );
             resized.write_to(&mut buffer, image::ImageOutputFormat::Png)?;
 
             info!(target: "visual_vocab", "Adding image ({}, {})", f_w_emu, f_h_emu);
-            images.push(TableCell::new().add_paragraph(Paragraph::new().add_run(
-                Run::new().add_image(Pic::new(&buffer.into_inner()).size(f_w_emu, f_h_emu)),
-            )))
+            images.push(TableCell::new().add_paragraph(
+                Paragraph::new().add_run(Run::new().add_image(
+                    Pic::new(&buffer.into_inner()).size(f_w_emu, f_h_emu),
+                )),
+            ))
         }
 
         let cellify = |x: String| {
-            let mut cell =
-                TableCell::new().add_paragraph(Paragraph::new().add_run(Run::new().add_text(x)));
-            cell.property = cell
-                .property
-                .width(size.0 as usize / vocabs.len() / 12_700 * 12, WidthType::Dxa);
+            let mut cell = TableCell::new().add_paragraph(
+                Paragraph::new().add_run(Run::new().add_text(x)),
+            );
+            cell.property = cell.property.width(
+                size.0 as usize / vocabs.len() / 12_700 * 12,
+                WidthType::Dxa,
+            );
             cell
         };
 
@@ -212,22 +223,28 @@ impl Pipeline for VisualVocabPipeline {
         let paper_height = super::docx::cm(29.7);
 
         // create tables
-        let handles = vocabs.chunks(col as usize).enumerate().map(|(i, vocabs)| {
-            info!(target: "visual_vocab", "Creating row {}", i);
-            let vocabs = vocabs.to_owned();
-            tokio::spawn(async move {
-                VisualFlashCard::to_table(vocabs, (paper_width, paper_height / 3))
+        let handles =
+            vocabs.chunks(col as usize).enumerate().map(|(i, vocabs)| {
+                info!(target: "visual_vocab", "Creating row {}", i);
+                let vocabs = vocabs.to_owned();
+                tokio::spawn(async move {
+                    VisualFlashCard::to_table(
+                        vocabs,
+                        (paper_width, paper_height / 3),
+                    )
                     .await
-                    .map_err(|err| format!("Error creating visual flashcard: {}", err))
-            })
-        });
+                    .map_err(|err| {
+                        format!("Error creating visual flashcard: {}", err)
+                    })
+                })
+            });
         let mut tables = futures::future::join_all(handles).await;
         for table in tables.drain(..) {
             info!(target: "visual_vocab", "Adding table");
             let table = table??;
-            docx = docx
-                .add_table(table)
-                .add_paragraph(Paragraph::new().add_run(Run::new().add_text("")));
+            docx = docx.add_table(table).add_paragraph(
+                Paragraph::new().add_run(Run::new().add_text("")),
+            );
         }
 
         // save document
@@ -247,7 +264,9 @@ impl Pipeline for VisualVocabPipeline {
 }
 
 /// Create visual flashcards
-async fn create_visual_vocabs(vocabs: &[Flashcard]) -> Result<Vec<VisualFlashCard>, PipelineError> {
+async fn create_visual_vocabs(
+    vocabs: &[Flashcard],
+) -> Result<Vec<VisualFlashCard>, PipelineError> {
     info!(target: "visual_vocab", "Creating visual {} flashcards", vocabs.len());
 
     let tasks = vocabs.iter().map(|vocab| {
@@ -271,16 +290,20 @@ async fn create_visual_vocabs(vocabs: &[Flashcard]) -> Result<Vec<VisualFlashCar
 }
 
 /// Create a visual flashcard
-async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, PipelineError> {
+async fn create_visual_vocab(
+    vocab: &Flashcard,
+) -> Result<VisualFlashCard, PipelineError> {
     info!(target: "visual_vocab", "Creating visual flashcard for {}", vocab);
 
     let mut images = image_search_max(&vocab.word, IMAGE_RANDOM_POOL_SIZE)
         .await
-        .map_err(|e| PipelineError::new(&format!("Error getting images: {}", e)))?;
+        .map_err(|e| {
+            PipelineError::new(&format!("Error getting images: {}", e))
+        })?;
 
-    let definition = search_vocab(&vocab.word)
-        .await
-        .map_err(|e| PipelineError::new(&format!("Error searching for definition: {}", e)))?;
+    let definition = search_vocab(&vocab.word).await.map_err(|e| {
+        PipelineError::new(&format!("Error searching for definition: {}", e))
+    })?;
 
     let image = loop {
         let img = images.remove(random::<usize>() % images.len());
@@ -336,7 +359,8 @@ async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, Pipel
         })
         .collect();
 
-    let definition = examples.iter().map(|x| x.0.to_owned()).collect::<Vec<_>>();
+    let definition =
+        examples.iter().map(|x| x.0.to_owned()).collect::<Vec<_>>();
     let rank = deep_search(&vocab.word, &definition, 1, 0.0).await;
     let example = examples[rank[0].0].1.to_owned();
 
@@ -350,7 +374,8 @@ async fn create_visual_vocab(vocab: &Flashcard) -> Result<VisualFlashCard, Pipel
     Ok(visual_flash_card)
 }
 
-static SENTENCE_EMBEDDER: OnceCell<Mutex<SentenceEmbeddingsModel>> = OnceCell::const_new();
+static SENTENCE_EMBEDDER: OnceCell<Mutex<SentenceEmbeddingsModel>> =
+    OnceCell::const_new();
 
 /// Search for a query in a list of strings
 /// - `query` is the string to search for
@@ -375,9 +400,11 @@ async fn deep_search(
             task::spawn_blocking(move || {
                 info!(target: "deep_search", "Loading sentence embedder model");
                 Mutex::new(
-                    SentenceEmbeddingsBuilder::remote(SentenceEmbeddingsModelType::AllMiniLmL12V2)
-                        .create_model()
-                        .expect("should have created a model"),
+                    SentenceEmbeddingsBuilder::remote(
+                        SentenceEmbeddingsModelType::AllMiniLmL12V2,
+                    )
+                    .create_model()
+                    .expect("should have created a model"),
                 )
             })
             .await
@@ -386,7 +413,9 @@ async fn deep_search(
         .await
         .lock()
         .await;
-    let query_embedding = model.encode(&[query]).expect("should have encoded query")[0].to_owned();
+    let query_embedding =
+        model.encode(&[query]).expect("should have encoded query")[0]
+            .to_owned();
     let content_embedding = model
         .encode(contents)
         .expect("should have encoded contents");
@@ -431,10 +460,13 @@ mod test {
 
     #[test]
     fn test_rust_bert() {
-        let model = SentenceEmbeddingsBuilder::remote(SentenceEmbeddingsModelType::AllMiniLmL12V2)
-            .create_model()
-            .expect("should have created a model");
-        let sentences = ["this is an example sentence", "each sentence is converted"];
+        let model = SentenceEmbeddingsBuilder::remote(
+            SentenceEmbeddingsModelType::AllMiniLmL12V2,
+        )
+        .create_model()
+        .expect("should have created a model");
+        let sentences =
+            ["this is an example sentence", "each sentence is converted"];
         let output = model
             .encode(&sentences)
             .expect("should have encoded sentences");
@@ -453,7 +485,8 @@ mod test {
         for _ in 0..8 {
             let contents = contents.clone();
             let task = tokio::spawn(async move {
-                let results = deep_search(query, contents.as_ref(), 0, 0.0).await;
+                let results =
+                    deep_search(query, contents.as_ref(), 0, 0.0).await;
                 assert_eq!(results.len(), 3);
                 assert_eq!(results[0].0, 0);
                 results

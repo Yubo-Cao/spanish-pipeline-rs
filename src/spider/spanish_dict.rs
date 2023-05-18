@@ -4,8 +4,10 @@ use log::{debug, info};
 use once_cell::sync::Lazy;
 use rust_bert::pipelines::keywords_extraction::KeywordExtractionModel;
 use scraper::{node::Node, ElementRef, Html, Selector};
-use tokio::sync::{Mutex, OnceCell};
-use tokio::task;
+use tokio::{
+    sync::{Mutex, OnceCell},
+    task,
+};
 use url::form_urlencoded;
 
 use super::{SpiderError, CLIENT};
@@ -49,12 +51,15 @@ pub struct DictionaryEntry {
 const LANG_EN: &str = "en";
 const LANG_ES: &str = "es";
 
-static KEYWORD_MODEL: OnceCell<Mutex<KeywordExtractionModel>> = OnceCell::const_new();
+static KEYWORD_MODEL: OnceCell<Mutex<KeywordExtractionModel>> =
+    OnceCell::const_new();
 
 /**
 Perform a search of a word in SpanishDict.com
  */
-pub async fn search_vocab(word: &str) -> Result<DictionaryEntry, Box<dyn std::error::Error>> {
+pub async fn search_vocab(
+    word: &str,
+) -> Result<DictionaryEntry, Box<dyn std::error::Error>> {
     let _lock = KEYWORD_MODEL
         .get_or_init(|| async {
             task::spawn_blocking(move || {
@@ -85,12 +90,10 @@ pub async fn search_vocab(word: &str) -> Result<DictionaryEntry, Box<dyn std::er
             Some(keyword) => {
                 let keyword = match keyword.get(0) {
                     Some(keyword) => &keyword.text,
-                    None => {
-                        return Err(Box::new(SpiderError::new(&format!(
-                            "failed to retry with keyword for word: {}, no keyword found",
-                            word
-                        ))))
-                    }
+                    None => return Err(Box::new(SpiderError::new(&format!(
+                        "failed to retry with keyword for word: {}, no keyword found",
+                        word
+                    )))),
                 };
                 info!(target: "spanish_dict", "retry with keyword: {}", keyword);
                 if let Ok(entry) = search_vocab_inner(keyword).await {
@@ -104,9 +107,9 @@ pub async fn search_vocab(word: &str) -> Result<DictionaryEntry, Box<dyn std::er
             }
             None => {
                 return Err(Box::new(SpiderError::new(&format!(
-                    "failed to retry with keyword for word: {}, no keyword found",
-                    word
-                ))))
+                "failed to retry with keyword for word: {}, no keyword found",
+                word
+            ))))
             }
         }
     }
@@ -117,7 +120,9 @@ pub async fn search_vocab(word: &str) -> Result<DictionaryEntry, Box<dyn std::er
     ))))
 }
 
-async fn search_vocab_inner(word: &str) -> Result<DictionaryEntry, &'static str> {
+async fn search_vocab_inner(
+    word: &str,
+) -> Result<DictionaryEntry, &'static str> {
     let encoded = form_urlencoded::Serializer::new(String::new())
         .append_key_only(word)
         .finish();
@@ -132,8 +137,9 @@ async fn search_vocab_inner(word: &str) -> Result<DictionaryEntry, &'static str>
         .await
         .expect("should be able to get text");
     let dom = Html::parse_document(&html);
-    let selector =
-        Lazy::new(|| Selector::parse("#main-container-video div[id^=dictionary]").unwrap());
+    let selector = Lazy::new(|| {
+        Selector::parse("#main-container-video div[id^=dictionary]").unwrap()
+    });
     let mut definitions: Vec<_> = vec![];
 
     for dictionary in dom.select(&selector) {
@@ -141,34 +147,50 @@ async fn search_vocab_inner(word: &str) -> Result<DictionaryEntry, &'static str>
         match id {
             "dictionary-neodict-es" => {
                 let selector = Lazy::new(|| {
-                    Selector::parse(&format!("div[lang] div[lang^={}]", LANG_EN)).unwrap()
+                    Selector::parse(&format!(
+                        "div[lang] div[lang^={}]",
+                        LANG_EN
+                    ))
+                    .unwrap()
                 });
                 for group in dictionary.select(&selector) {
                     for definition in group.next_sibling().unwrap().children() {
                         let dom = as_dom(definition);
 
-                        let definition_text = get_text_from_selector(&dom, "a", LANG_EN);
-                        let example_text = get_text_from_selector(&dom, "span", LANG_ES);
-                        let translation_text = get_text_from_selector(&dom, "span", LANG_EN);
+                        let definition_text =
+                            get_text_from_selector(&dom, "a", LANG_EN);
+                        let example_text =
+                            get_text_from_selector(&dom, "span", LANG_ES);
+                        let translation_text =
+                            get_text_from_selector(&dom, "span", LANG_EN);
 
-                        let selector = Lazy::new(|| Selector::parse("span:last-child").unwrap());
-                        let group_text = textify(&group.select(&selector).next().unwrap());
-
-                        definitions.push(DictionaryDefinition::DefinitionAndGroupWithExample {
-                            group: group_text,
-                            definition: definition_text,
-                            examples: vec![DictionaryExample::ExampleAndTranslation {
-                                example: example_text,
-                                translation: translation_text,
-                            }],
+                        let selector = Lazy::new(|| {
+                            Selector::parse("span:last-child").unwrap()
                         });
+                        let group_text =
+                            textify(&group.select(&selector).next().unwrap());
+
+                        definitions.push(
+                            DictionaryDefinition::DefinitionAndGroupWithExample {
+                                group: group_text,
+                                definition: definition_text,
+                                examples: vec![
+                                    DictionaryExample::ExampleAndTranslation {
+                                        example: example_text,
+                                        translation: translation_text,
+                                    },
+                                ],
+                            },
+                        );
                     }
                 }
             }
             "dictionary-neoharrap-es" => {
                 let selector = Lazy::new(|| {
-                    Selector::parse("#dictionary-neoharrap-es > div > div > div:nth-child(2) > div")
-                        .unwrap()
+                    Selector::parse(
+                        "#dictionary-neoharrap-es > div > div > div:nth-child(2) > div",
+                    )
+                    .unwrap()
                 });
 
                 for group in ElementRef::wrap(dictionary.parent().unwrap())
@@ -197,8 +219,15 @@ async fn search_vocab_inner(word: &str) -> Result<DictionaryEntry, &'static str>
                     };
 
                     let group = textify(
-                        &ElementRef::wrap(group.first_child().unwrap().children().nth(2).unwrap())
-                            .unwrap(),
+                        &ElementRef::wrap(
+                            group
+                                .first_child()
+                                .unwrap()
+                                .children()
+                                .nth(2)
+                                .unwrap(),
+                        )
+                        .unwrap(),
                     );
 
                     let example = intermediate[intermediate.len() - 1];
@@ -223,10 +252,12 @@ async fn search_vocab_inner(word: &str) -> Result<DictionaryEntry, &'static str>
                                 if collect.len() == 3 {
                                     let example = textify(&collect[0]);
                                     let translation = textify(&collect[2]);
-                                    return Some(DictionaryExample::ExampleAndTranslation {
-                                        example,
-                                        translation,
-                                    });
+                                    return Some(
+                                        DictionaryExample::ExampleAndTranslation {
+                                            example,
+                                            translation,
+                                        },
+                                    );
                                 }
                             }
                             None
@@ -234,14 +265,20 @@ async fn search_vocab_inner(word: &str) -> Result<DictionaryEntry, &'static str>
                         .collect::<Vec<_>>();
 
                     if result.is_empty() {
-                        definitions
-                            .push(DictionaryDefinition::DefinitionAndGroup { group, definition });
+                        definitions.push(
+                            DictionaryDefinition::DefinitionAndGroup {
+                                group,
+                                definition,
+                            },
+                        );
                     } else {
-                        definitions.push(DictionaryDefinition::DefinitionAndGroupWithExample {
-                            group,
-                            definition,
-                            examples: result,
-                        });
+                        definitions.push(
+                            DictionaryDefinition::DefinitionAndGroupWithExample {
+                                group,
+                                definition,
+                                examples: result,
+                            },
+                        );
                     }
                 }
             }
@@ -279,9 +316,14 @@ fn textify(element: &ElementRef) -> String {
 }
 
 /// Get the text from a selector, given a language & tag of the selector
-fn get_text_from_selector(dom: &Html, selector_str: &str, lang: &str) -> String {
-    let selector =
-        Lazy::new(|| Selector::parse(&format!("{}[lang={}]", selector_str, lang)).unwrap());
+fn get_text_from_selector(
+    dom: &Html,
+    selector_str: &str,
+    lang: &str,
+) -> String {
+    let selector = Lazy::new(|| {
+        Selector::parse(&format!("{}[lang={}]", selector_str, lang)).unwrap()
+    });
     textify(&dom.select(&selector).next().unwrap())
 }
 

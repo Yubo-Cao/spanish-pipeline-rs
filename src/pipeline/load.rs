@@ -1,6 +1,4 @@
-use std::fs::File;
-use std::io::Read;
-use std::path::PathBuf;
+use std::{fs::File, io::Read, path::PathBuf};
 
 use async_trait::async_trait;
 use clap::{arg, Parser, ValueEnum};
@@ -84,17 +82,20 @@ impl Pipeline for LoadPipeline {
                     VocabFileType::Docx => {
                         info!(target: "load_pipeline", "Loading DOCX file: {}", self.path.display());
                         let mut buf = Vec::new();
-                        File::open(&self.path as &PathBuf)?.read_to_end(&mut buf)?;
+                        File::open(&self.path as &PathBuf)?
+                            .read_to_end(&mut buf)?;
                         let docx = read_docx(&buf)?;
 
                         let mut flashcard = Vec::new();
-                        for table in docx.document.children.iter().filter_map(|x| {
-                            if let docx_rs::DocumentChild::Table(x) = x {
-                                Some(x)
-                            } else {
-                                None
-                            }
-                        }) {
+                        for table in
+                            docx.document.children.iter().filter_map(|x| {
+                                if let docx_rs::DocumentChild::Table(x) = x {
+                                    Some(x)
+                                } else {
+                                    None
+                                }
+                            })
+                        {
                             let rows = &table.rows;
                             if rows.is_empty() {
                                 warn!(target: "load_pipeline", "Skipping empty table");
@@ -114,7 +115,8 @@ impl Pipeline for LoadPipeline {
 
                                 if !word.is_empty()
                                     && !definition.is_empty()
-                                    && word.to_lowercase() != definition.to_lowercase()
+                                    && word.to_lowercase()
+                                        != definition.to_lowercase()
                                 {
                                     let word = word
                                         .replace("->", "→")
@@ -124,7 +126,8 @@ impl Pipeline for LoadPipeline {
                                         .replace("->", "→")
                                         .replace(['“', '”'], "\"")
                                         .replace('¨', "");
-                                    flashcard.push(Flashcard { word, definition });
+                                    flashcard
+                                        .push(Flashcard { word, definition });
                                 }
                             }
                         }

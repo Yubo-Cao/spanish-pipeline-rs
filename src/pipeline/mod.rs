@@ -28,7 +28,8 @@ impl PipelineIO {
                 std::fs::write(path, content)?;
             }
             PipelineIO::Clipboard(info) => {
-                let mut clipboard: ClipboardContext = clipboard::ClipboardProvider::new().unwrap();
+                let mut clipboard: ClipboardContext =
+                    clipboard::ClipboardProvider::new().unwrap();
                 clipboard.set_contents(info.to_owned()).unwrap();
                 let clipboard_info = if info.len() > 20 {
                     format!("{}...", &info[..20])
@@ -57,7 +58,7 @@ pub trait Pipeline {
     ) -> Result<PipelineIO, Box<dyn std::error::Error>>;
 
     /// Return the name of the pipeline.
-    fn name(&self) ->  &'static str;
+    fn name(&self) -> &'static str;
 }
 
 /// Represents a Pipeline Error

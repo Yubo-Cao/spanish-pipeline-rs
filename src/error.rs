@@ -1,5 +1,4 @@
-use std::error::Error;
-use std::fmt::Display;
+use std::{error::Error, fmt::Display};
 
 /// Represents an error that can occur during the execution of the CLI.
 #[derive(Debug)]

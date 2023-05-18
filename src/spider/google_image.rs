@@ -38,7 +38,9 @@ impl fmt::Display for GoogleImage {
 
 impl Image {
     /// Get the bytes of an image
-    pub async fn get_image(&self) -> Result<DynamicImage, Box<dyn std::error::Error>> {
+    pub async fn get_image(
+        &self,
+    ) -> Result<DynamicImage, Box<dyn std::error::Error>> {
         let resp = CLIENT.get(&self.src).send().await.map_err(|e| {
             SpiderError::new(&format!(
                 "failed to send response for image: {} because\n{}",
@@ -52,7 +54,10 @@ impl Image {
             ))
         })?;
         let image = image::load_from_memory(&bytes).map_err(|e| {
-            SpiderError::new(&format!("failed to parse image: {} because\n{}", self, e))
+            SpiderError::new(&format!(
+                "failed to parse image: {} because\n{}",
+                self, e
+            ))
         })?;
         Ok(image)
     }
@@ -132,8 +137,9 @@ pub async fn image_search(
             .finish();
         let url = format!("https://www.google.com/search?{}", params);
         debug!(target: "image_search", "url: {}", url);
-        let dom =
-            Html::parse_document(&CLIENT.get(&url).send().await.unwrap().text().await.unwrap());
+        let dom = Html::parse_document(
+            &CLIENT.get(&url).send().await.unwrap().text().await.unwrap(),
+        );
         let script_selector = Lazy::new(|| Selector::parse("script").unwrap());
         let json = dom
             .select(&script_selector)
@@ -151,8 +157,9 @@ pub async fn image_search(
         let start_prefix = "AF_initDataCallback(";
         let start = json.find(start_prefix).unwrap();
         let end = json[start..].find("});").unwrap();
-        let json: serde_json::Value = json5::from_str(&json[start + start_prefix.len()..end + 1])
-            .expect("should be valid json");
+        let json: serde_json::Value =
+            json5::from_str(&json[start + start_prefix.len()..end + 1])
+                .expect("should be valid json");
         let data = &json["data"][56][1][0][0][1][0];
         let images = data
             .as_array()
